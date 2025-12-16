@@ -1,0 +1,13 @@
+langchain
+langchain-openai
+langchain-chroma
+langchain-community
+biopython
+streamlit
+gtts
+python-dotenv
+chromadb
+tiktoken
+openai
+pydub
+streamlit-audiorec
