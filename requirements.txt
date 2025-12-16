@@ -10,4 +10,5 @@ chromadb
 tiktoken
 openai
 pydub
-streamlit-audiorec
+streamlit-audiorecorder 
+audioop
