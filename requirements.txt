@@ -11,4 +11,3 @@ tiktoken
 openai
 pydub
 streamlit-audiorecorder 
-audioop
