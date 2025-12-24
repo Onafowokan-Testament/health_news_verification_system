@@ -97,15 +97,34 @@ def main():
     st.markdown("### Check if health claims you've heard are true or false")
     st.markdown("**NEW: Now with voice input! 🎤**")
 
-    # Initialize session state
+    # Ensure configuration is available early to avoid missing session_state keys
+    if "config" not in st.session_state:
+        # If running on Streamlit Cloud, the user may have set GEMINI_API_KEY in st.secrets
+        try:
+            if getattr(st, "secrets", None) and st.secrets.get("GEMINI_API_KEY"):
+                os.environ.setdefault("GEMINI_API_KEY", st.secrets["GEMINI_API_KEY"])
+        except Exception:
+            # Defensive: if secrets are not available or access fails, continue
+            pass
+
+        st.session_state.config = Config()
+        try:
+            st.session_state.config.validate()
+            logger.info("Config validated")
+        except Exception as e:
+            logger.exception("Config validation failed: %s", e)
+            st.error(
+                "Configuration error: GEMINI_API_KEY is required. Set it in Streamlit Secrets or environment variables. See README for deployment steps."
+            )
+            # Stop further execution so we don't access uninitialized components
+            st.stop()
+
+    # Initialize session state components (only if agent missing)
     if "agent" not in st.session_state:
         with st.spinner("🔧 Loading system..."):
             try:
                 logger.info("Loading system components in Streamlit UI")
-                # Load configuration
-                config = Config()
-                config.validate()
-                logger.info("Config validated")
+                config = st.session_state.config
 
                 # Initialize components
                 pubmed = PubMedSearcher(config.PUBMED_EMAIL)
@@ -122,12 +141,12 @@ def main():
                 # Create agent
                 st.session_state.agent = HealthCheckAgent(config, kb, pubmed)
                 st.session_state.voice_handler = voice
-                st.session_state.config = config
 
                 st.success("✓ System ready!")
                 logger.info("Streamlit system ready")
             except Exception as e:
                 logger.exception("Initialization error in Streamlit app: %s", e)
+                st.error(f"Initialization error: {e}")
     # Sidebar
     with st.sidebar:
         st.header("⚙️ Settings")
@@ -169,7 +188,7 @@ def main():
         - Curated Nigerian health myths database
         - PubMed medical research
         - WHO and NCDC guidelines
-        - OpenAI Whisper for voice input
+        - Gemini (Google GenAI) for voice transcription and generation
         
         ⚠️ This is not a substitute for medical advice. 
         Always consult healthcare professionals.
