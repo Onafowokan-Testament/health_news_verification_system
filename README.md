@@ -1,251 +1,88 @@
-"""
-# 🏥 Nigerian Health Misinformation Detection System
+# Nigerian Health Claim Checker
 
-A production-ready RAG (Retrieval-Augmented Generation) agent that helps older adults in Nigeria verify health claims using curated medical knowledge and PubMed research.
+A simple, accessible tool to help older adults verify health claims using trusted guidance and medical research.
 
-## 🌟 Features
+✅ Easy for non-technical users
 
-✅ **Curated Nigerian Health Myths** - 15+ pre-loaded dangerous myths  
-✅ **Real-time PubMed Search** - Access to 30M+ medical research papers  
-✅ **Confidence Scoring** - Every answer includes a confidence percentage  
-✅ **Source Citations** - References WHO, NCDC, and peer-reviewed journals  
-✅ **Multi-language Support** - English, Pidgin, Yoruba, Hausa, Igbo  
-✅ **Voice Output** - Text-to-speech for accessibility  
-✅ **Streamlit UI** - Beautiful, user-friendly interface  
-✅ **Vector Search** - Fast semantic search using Chroma DB  
-✅ **Production Ready** - Error handling, logging, rate limiting  
+- Record your question with the microphone and the app will automatically transcribe and check the claim for you.
+- Or type a claim into the box and click Check.
+- Results show a clear verdict (TRUE / FALSE / PARTIALLY TRUE / UNCLEAR), a short explanation, and trusted sources.
 
-## 🚀 Quick Start
+## How to run (non-technical)
 
-### 1. Prerequisites
-- Python 3.9 or higher
-- OpenAI API key
-- Email address (for PubMed API)
+1. Install Python (version 3.9+). If you already have it, skip this step.
+2. Open a command prompt in this folder (where this README is).
+3. Create and activate a virtual environment (optional but recommended):
+   - Windows: `python -m venv .venv` then `.venv\Scripts\activate`
+4. Install dependencies:
+   - `pip install -r requirements.txt`
+5. Create a `.env` file with at least these values:
+   - `GEMINI_API_KEY=your_gemini_api_key_here` (required)
+   - `PUBMED_EMAIL=you@example.com` (required by PubMed API)
+6. Start the app:
+   - `streamlit run app.py`
+7. The app will open in your browser. Click the microphone and speak; the app will automatically transcribe and verify your claim.
 
-### 2. Installation
+## What the app does (simple explanation)
 
-```bash
-# Clone or download the project
-cd nigerian-health-checker
+- The app has a small database of common Nigerian health myths and uses PubMed for scientific research when needed.
+- When you record audio, the system converts it to text (transcription), then checks that text against the database and research to provide a short, clear verdict and advice.
+- The app is designed to speak clearly and explain things using plain language so it’s easy to understand.
 
-# Run setup script
-python setup.py
+## Main parts of the code (for maintainers)
 
-# Edit .env file with your API keys
-nano .env  # or use any text editor
-```
+- `app.py` — Streamlit UI and user interaction. Handles recording, transcription, and showing results.
+- `agent.py` — The "thinking" part. It uses a small curated database first, then searches PubMed if needed, and formats the final verdict.
+- `vector_store.py` & `data_loader.py` — Store and provide the curated myths used for instant answers.
+- `pubmed_search.py` — A small helper that fetches recent PubMed papers when needed.
+- `voice_handler.py` — Handles speech-to-text and text-to-speech.
+- `config.py` — Configuration settings (API keys, model names, thresholds).
 
-### 3. Run the Application
+## Auto-transcribe & auto-verify
 
-```bash
-streamlit run app.py
-```
+The app now automatically transcribes recordings and immediately checks the transcribed text — no more extra buttons needed. This makes it simpler for users who just want to speak and get an answer.
 
-The app will open in your browser at `http://localhost:8501`
+## Using Gemini API instead of OpenAI
 
-## 📁 Project Structure
+Yes — it’s possible to use Google’s Gemini models instead of OpenAI, but it requires a few changes:
 
-```
-nigerian-health-checker/
-├── config.py              # Configuration and settings
-├── data_loader.py         # Curated health myths database
-├── pubmed_search.py       # PubMed API integration
-├── vector_store.py        # Chroma vector database manager
-├── agent.py               # RAG agent implementation
-├── app.py                 # Streamlit user interface
-├── requirements.txt       # Python dependencies
-├── setup.py              # Setup script
-├── .env.example          # Environment variables template
-├── .env                  # Your API keys (create this)
-└── data/
-    └── chroma_db/        # Vector database storage
-```
+1. **API keys**: Add your Gemini API key (for example `GEMINI_API_KEY`) to the `.env` file.
+2. **Install the Gemini client**: Add the official Google Gemini or Vertex AI client as a dependency (check the vendor docs for the correct package).
+3. **Update the model wrapper**: The app now uses Gemini as the only model provider via `gemini_client.py`.
+4. **Embeddings**: The app still uses OpenAI embeddings by default (`text-embedding-3-large`). If you want embeddings from a different provider, we can add an adapter for that also.
 
-## 🔧 Configuration
+If you want, I can make a small adapter in `agent.py` so you can switch models by setting a config value like `MODEL_PROVIDER = 'openai'|'gemini'`, and I’ll show the exact code changes.
 
-Edit `.env` file:
+## Using Gemini (step-by-step)
 
-```bash
-# Required
-OPENAI_API_KEY=sk-your-key-here
-PUBMED_EMAIL=your-email@example.com
+To use Gemini instead of OpenAI, set the following environment variables in your `.env` file:
 
-# Optional
-LANGSMITH_API_KEY=your-langsmith-key  # For debugging
-OPENAI_MODEL=gpt-4o                   # Model to use
-```
+- `MODEL_PROVIDER=gemini`
+- `GEMINI_API_KEY=your_gemini_api_key_here`
+- Optionally `GEMINI_MODEL=gemini-2.5-flash` (or your preferred Gemini model name – use `client.models.list()` if unsure)
 
-## 📊 How It Works
+Also install the Gemini client package:
 
-### Architecture
+- `pip install google-genai`
 
-```
-User Query
-    ↓
-[Streamlit UI]
-    ↓
-[RAG Agent]
-    ↓
-├─→ [Curated Myths Vector DB] ─→ Quick answers for known myths
-│
-└─→ [PubMed API] ─→ Research for unknown claims
-    ↓
-[OpenAI GPT-4o]
-    ↓
-[Response with Verdict + Confidence + Sources]
-    ↓
-[Text-to-Speech Output]
-```
+I added a small `gemini_client.py` adapter that calls Gemini for chat completions and automatically includes curated DB and PubMed results in the prompt. The `agent.py` will use Gemini when `MODEL_PROVIDER=gemini`.
 
-### Search Strategy
+## Privacy & safety
 
-1. **Check Curated Database First** - Fast answers for common Nigerian myths
-2. **Search PubMed if Needed** - Access latest medical research
-3. **Combine Evidence** - Synthesize information from multiple sources
-4. **Provide Verdict** - TRUE, FALSE, PARTIALLY TRUE, or UNCLEAR
-5. **Explain Clearly** - Simple language suitable for older adults
+- We don’t store audio recordings permanently. The app transcribes and processes audio to generate a short result.
+- This tool is for informational purposes only and does not replace professional medical advice.
 
-## 🧪 Testing
+## Logging & debugging
 
-Try these example claims:
+- The app logs runtime events to the terminal using `loguru` (initialization steps, transcription events, model calls, PubMed queries and errors).
+- Run the app with `streamlit run app.py` and watch the terminal to follow what the app is doing.
 
-- "Does hot water cure malaria?"
-- "Can sugar cause diabetes?"
-- "Do antibiotics cure viral infections?"
-- "Does bitter kola cure COVID-19?"
-- "Can saltwater cure Ebola?"
+## Need more help?
 
-## 📝 Adding New Health Myths
+Tell me if you want:
 
-Edit `data_loader.py` and add to `CURATED_HEALTH_MYTHS`:
+- A guided walkthrough added to the app UI for first-time users
+- A model switcher to try Gemini and OpenAI interchangeably
+- Simpler installer scripts for non-technical users
 
-```python
-{
-    "claim": "Your new health claim here",
-    "verdict": "FALSE",
-    "confidence": 95,
-    "explanation": "Clear explanation here",
-    "sources": [
-        "WHO Guidelines",
-        "NCDC Nigeria"
-    ],
-    "category": "category_name",
-    "language": "en"
-}
-```
-
-Then restart the app to re-index.
-
-## 🌍 Language Support
-
-Currently supports:
-- **English** - Full support
-- **Pidgin** - Uses English TTS
-- **Yoruba** - Limited TTS support
-- **Hausa** - Limited TTS support
-- **Igbo** - Limited TTS support
-
-To improve language support, consider:
-- Using Google Translate API for translation
-- Translating curated myths into local languages
-- Using multilingual embeddings
-
-## 🔒 Security & Privacy
-
-- API keys stored in `.env` (never commit to Git!)
-- No user data stored or logged
-- All processing happens in real-time
-- PubMed searches are anonymous
-
-## 💰 Cost Estimates
-
-**Per Query:**
-- OpenAI API: $0.01 - $0.05
-- PubMed API: Free
-- Vector Search: Free
-
-**Monthly (1000 queries):**
-- ~$10-50 depending on query complexity
-
-## 🐛 Troubleshooting
-
-### "OPENAI_API_KEY not found"
-- Make sure you created `.env` file
-- Copy from `.env.example` and add your key
-
-### "PubMed search failed"
-- Check your email is set in `.env`
-- PubMed rate limits to 3 requests/second
-- Wait a moment and try again
-
-### "No module named 'streamlit'"
-- Run: `pip install -r requirements.txt`
-
-### Vector database errors
-- Delete `data/chroma_db/` folder
-- Restart app to re-index
-
-## 🚀 Deployment Options
-
-### Option 1: Streamlit Cloud (Free)
-1. Push code to GitHub
-2. Go to share.streamlit.io
-3. Connect your repo
-4. Add secrets (API keys) in dashboard
-
-### Option 2: Railway (Easy)
-1. Connect GitHub repo
-2. Add environment variables
-3. Deploy with one click
-
-### Option 3: AWS/GCP/Azure
-- Use Docker container
-- Deploy to EC2/Compute Engine/VM
-- Set up HTTPS and domain
-
-## 📈 Future Improvements
-
-- [ ] Add voice input (speech-to-text)
-- [ ] Translate myths to local languages
-- [ ] Add SMS interface for feature phones
-- [ ] Create WhatsApp bot
-- [ ] Add offline mode with cached responses
-- [ ] Build mobile app (Flutter/React Native)
-- [ ] Add community reporting of new myths
-- [ ] Integration with Nigerian health clinics
-
-## 🤝 Contributing
-
-To add more health myths:
-1. Research the claim thoroughly
-2. Find authoritative sources (WHO, NCDC, peer-reviewed papers)
-3. Add to `data_loader.py`
-4. Test with the system
-5. Submit pull request
-
-## 📄 License
-
-MIT License - Feel free to use and modify for your projects
-
-## 🙏 Acknowledgments
-
-- WHO for public health guidelines
-- NCDC Nigeria for local health information
-- PubMed/NCBI for medical research access
-- LangChain team for RAG framework
-- Anthropic for Claude (used in development)
-
-## 📞 Support
-
-For issues or questions:
-- Open a GitHub issue
-- Email: your-email@example.com
-
-## ⚠️ Disclaimer
-
-This system is for informational purposes only and is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of qualified health providers with any questions regarding medical conditions.
-
----
-
-Built with ❤️ for Nigerian healthcare
-"""
+Thank you — I can also update the app to show spoken results back to the user if you'd like audio feedback after the verdict.

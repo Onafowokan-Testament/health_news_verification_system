@@ -1,5 +1,4 @@
 langchain
-langchain-openai
 langchain-chroma
 langchain-community
 biopython
@@ -8,7 +7,8 @@ gtts
 python-dotenv
 chromadb
 tiktoken
-openai
+google-genai
 pydub
-streamlit-audiorecorder 
-pyaudioop
+streamlit-audiorecorder
+loguru
+

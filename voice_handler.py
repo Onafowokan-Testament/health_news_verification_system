@@ -4,8 +4,15 @@ import tempfile
 from typing import Optional, Tuple
 
 from gtts import gTTS
-from openai import OpenAI
 from pydub import AudioSegment
+
+from logger import logger
+
+# Use Google GenAI SDK for transcription (if available)
+try:
+    from google import genai
+except Exception:
+    genai = None
 
 
 class VoiceHandler:
@@ -19,17 +26,26 @@ class VoiceHandler:
         Initialize voice handler.
 
         Args:
-            api_key: OpenAI API key for Whisper
+            api_key: Gemini API key for speech-to-text (or other provider if available)
         """
-        self.client = OpenAI(api_key=api_key)
+        self.api_key = api_key
+        self.client = None
+        if genai:
+            try:
+                self.client = genai.Client()
+            except Exception:
+                import os
 
-        # Language mapping for Whisper (input) and gTTS (output)
+                os.environ["GEMINI_API_KEY"] = api_key
+                self.client = genai.Client()
+
+        # Language mapping for transcription and gTTS (output)
         self.language_codes = {
-            "English": {"whisper": "en", "gtts": "en"},
-            "Pidgin": {"whisper": "en", "gtts": "en"},  # Treat as English
-            "Yoruba": {"whisper": "yo", "gtts": "yo"},
-            "Hausa": {"whisper": "ha", "gtts": "ha"},
-            "Igbo": {"whisper": "ig", "gtts": "ig"},
+            "English": {"transcribe": "en", "gtts": "en"},
+            "Pidgin": {"transcribe": "en", "gtts": "en"},  # Treat as English
+            "Yoruba": {"transcribe": "yo", "gtts": "yo"},
+            "Hausa": {"transcribe": "ha", "gtts": "ha"},
+            "Igbo": {"transcribe": "ig", "gtts": "ig"},
         }
 
         # Supported audio formats
@@ -48,7 +64,7 @@ class VoiceHandler:
         self, audio_file, language: str = "English", prompt: Optional[str] = None
     ) -> Tuple[str, dict]:
         """
-        Transcribe audio to text using OpenAI Whisper.
+        Transcribe audio to text using Google GenAI audio transcription (when available).
 
         Args:
             audio_file: Audio file object (from Streamlit file_uploader or audio_input)
@@ -59,8 +75,8 @@ class VoiceHandler:
             Tuple of (transcribed_text, metadata)
         """
         try:
-            # Get language code for Whisper
-            lang_code = self.language_codes.get(language, {}).get("whisper", "en")
+            # Get language code for transcription
+            lang_code = self.language_codes.get(language, {}).get("transcribe", "en")
 
             # Prepare audio file - handle both bytes and file objects
             if isinstance(audio_file, bytes):
@@ -76,9 +92,16 @@ class VoiceHandler:
 
             # Validate format
             if file_extension and file_extension not in self.supported_formats:
+                logger.warning("Unsupported audio format requested: %s", file_extension)
                 return "", {"error": f"Unsupported format: {file_extension}"}
 
-            # Create temporary file for Whisper API
+            logger.info(
+                "Starting transcription: language=%s, extension=%s, bytes=%d",
+                lang_code,
+                file_extension,
+                len(audio_bytes),
+            )
+            # Create temporary file for transcription
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=f".{file_extension or 'mp3'}"
             ) as temp_audio:
@@ -86,35 +109,116 @@ class VoiceHandler:
                 temp_audio_path = temp_audio.name
 
             try:
-                # Call Whisper API
-                with open(temp_audio_path, "rb") as audio:
-                    transcription = self.client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=audio,
-                        language=lang_code,
-                        prompt=prompt
-                        or "This is a health-related question about Nigerian healthcare.",
-                        response_format="verbose_json",  # Get detailed response
+                # Use documented GenAI pattern: send prompt + inline audio bytes to models.generate_content
+                if self.client is not None:
+                    from google.genai import types
+
+                    # Detect mime type from extension
+                    mime_map = {
+                        "mp3": "audio/mp3",
+                        "wav": "audio/wav",
+                        "m4a": "audio/mp4",
+                        "ogg": "audio/ogg",
+                        "flac": "audio/flac",
+                        "aac": "audio/aac",
+                    }
+
+                    mime_type = (
+                        mime_map.get(file_extension, "audio/mp3")
+                        if file_extension
+                        else "audio/mp3"
                     )
 
-                # Extract transcription and metadata
-                text = transcription.text.strip()
-                metadata = {
-                    "language": (
-                        transcription.language
-                        if hasattr(transcription, "language")
-                        else lang_code
-                    ),
-                    "duration": (
-                        transcription.duration
-                        if hasattr(transcription, "duration")
-                        else None
-                    ),
-                    "success": True,
-                }
+                    with open(temp_audio_path, "rb") as audio:
+                        audio_bytes = audio.read()
 
-                return text, metadata
+                    # Build a short prompt for transcription
+                    prompt = (
+                        prompt
+                        or f"Generate a clear transcript of this audio. Provide only the transcript text. Language hint: {lang_code}."
+                    )
 
+                    contents = [
+                        prompt,
+                        types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                    ]
+
+                    try:
+                        # Prefer model specified in config if available, else use gemini-2.5-flash
+                        model_name = getattr(self, "model", None) or "gemini-2.5-flash"
+                        # If client supports listing models, try to use first available supported model
+                        try:
+                            listed = self.client.models.list()
+                            if listed and isinstance(listed, list) and len(listed) > 0:
+                                # prefer a flash model if present
+                                available = [
+                                    (
+                                        m.get("name")
+                                        if isinstance(m, dict)
+                                        else getattr(m, "name", None)
+                                    )
+                                    for m in listed
+                                ]
+                                if any("flash" in (a or "") for a in available):
+                                    for a in available:
+                                        if a and "flash" in a:
+                                            model_name = a
+                                            break
+                                else:
+                                    model_name = available[0]
+                        except Exception:
+                            pass
+
+                        response = self.client.models.generate_content(
+                            model=model_name, contents=contents
+                        )
+                    except Exception:
+                        # Try a safe default model and surface helpful guidance
+                        try:
+                            response = self.client.models.generate_content(
+                                model="gemini-2.5-flash", contents=contents
+                            )
+                        except Exception as inner_e:
+                            raise RuntimeError(
+                                "Generative AI audio transcription failed. See Gemini audio docs. Original error: %s"
+                                % inner_e
+                            )
+
+                    # Extract transcript text
+                    text = ""
+                    if hasattr(response, "text") and response.text:
+                        text = response.text.strip()
+                    else:
+                        # Fallback: inspect output structure
+                        try:
+                            outputs = getattr(response, "output", None)
+                            if outputs and len(outputs) > 0:
+                                content = outputs[0].get("content", [])
+                                if content and len(content) > 0:
+                                    # content elements may be dicts with 'text'
+                                    first = content[0]
+                                    if isinstance(first, dict):
+                                        text = first.get("text", "").strip()
+                                    else:
+                                        text = str(first).strip()
+                        except Exception:
+                            text = str(response)
+
+                    metadata = {
+                        "language": lang_code,
+                        "duration": None,
+                        "success": True,
+                    }
+                    logger.info(
+                        "Transcription succeeded (chars=%d)",
+                        len(text) if isinstance(text, str) else 0,
+                    )
+                    return text, metadata
+
+                else:
+                    raise RuntimeError(
+                        "Generative AI audio transcription not available. Install `google-genai` (pip install google-genai) and ensure audio transcription support is enabled."
+                    )
             finally:
                 # Clean up temp file
                 try:

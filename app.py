@@ -3,6 +3,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
+from logger import logger
 from vector_store import HealthKnowledgeBase
 
 load_dotenv()
@@ -12,7 +13,7 @@ from data_loader import get_all_myths
 from pubmed_search import PubMedSearcher
 from voice_handler import VoiceHandler
 
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+# Using Gemini for ML services; GEMINI_API_KEY is validated in Config
 
 
 def initialize_app():
@@ -100,17 +101,21 @@ def main():
     if "agent" not in st.session_state:
         with st.spinner("🔧 Loading system..."):
             try:
+                logger.info("Loading system components in Streamlit UI")
                 # Load configuration
                 config = Config()
                 config.validate()
+                logger.info("Config validated")
 
                 # Initialize components
                 pubmed = PubMedSearcher(config.PUBMED_EMAIL)
                 kb = HealthKnowledgeBase(config)
-                voice = VoiceHandler(config.OPENAI_API_KEY)
+                voice = VoiceHandler(config.GEMINI_API_KEY)
+                logger.info("Components initialized: PubMed, KB, VoiceHandler")
 
                 # Index myths if database is empty
                 if kb.get_count() == 0:
+                    logger.info("Indexing myths into KB from data_loader")
                     myths = get_all_myths()
                     kb.index_myths(myths)
 
@@ -120,10 +125,9 @@ def main():
                 st.session_state.config = config
 
                 st.success("✓ System ready!")
+                logger.info("Streamlit system ready")
             except Exception as e:
-                st.error(f"Initialization error: {e}")
-                st.stop()
-
+                logger.exception("Initialization error in Streamlit app: %s", e)
     # Sidebar
     with st.sidebar:
         st.header("⚙️ Settings")
@@ -147,8 +151,7 @@ def main():
         **How to use voice input:**
         
         1. **Record:** Click the microphone and speak your question clearly
-        2. **Upload:** Or upload a pre-recorded audio file
-        3. **Check:** Review the transcription before checking
+        2. **Check:** Review the transcription before checking
         
         **Tips for best results:**
         - Speak clearly and slowly
@@ -190,9 +193,7 @@ def main():
     st.markdown("---")
 
     # Create tabs for different input methods
-    tab1, tab2, tab3 = st.tabs(
-        ["💬 Type Your Question", "🎤 Record Audio", "📁 Upload Audio File"]
-    )
+    tab1, tab2 = st.tabs(["💬 Type Your Question", "🎤 Record Audio"])
 
     claim_to_check = None
 
@@ -214,7 +215,7 @@ def main():
     with tab2:
         st.subheader("Record Your Question")
         st.markdown(
-            "Click the microphone to start recording. Speak clearly and state your complete question."
+            "Click the microphone to start recording. Speak clearly and state your complete question. The app will automatically transcribe and verify what you say once recording finishes."
         )
 
         # Audio recorder component
@@ -223,124 +224,74 @@ def main():
         if audio_bytes:
             st.audio(audio_bytes, format="audio/wav")
 
-            col1, col2 = st.columns([1, 1])
+            # Compute a simple hash for the recording so we don't retranscribe the same audio repeatedly
+            try:
+                import hashlib
 
-            with col1:
-                if st.button("📝 Transcribe Recording", key="transcribe_recorded"):
-                    with st.spinner("🎧 Transcribing audio..."):
-                        try:
-                            # Transcribe audio bytes directly
-                            voice_handler = st.session_state.voice_handler
-                            transcribed_text, metadata = voice_handler.transcribe_audio(
-                                audio_bytes, language=language
+                if hasattr(audio_bytes, "getbuffer"):
+                    data = audio_bytes.getbuffer().tobytes()
+                elif hasattr(audio_bytes, "getvalue"):
+                    data = audio_bytes.getvalue()
+                else:
+                    # Fallback
+                    audio_bytes.seek(0)
+                    data = audio_bytes.read()
+
+                audio_hash = hashlib.sha256(data).hexdigest()
+            except Exception:
+                audio_hash = None
+
+            # Transcribe once per unique recording and then automatically set for checking
+            if audio_hash and st.session_state.get("last_recorded_hash") != audio_hash:
+                with st.spinner("🎧 Transcribing and checking claim..."):
+                    try:
+                        voice_handler = st.session_state.voice_handler
+                        transcribed_text, metadata = voice_handler.transcribe_audio(
+                            audio_bytes, language=language
+                        )
+
+                        if metadata.get("success", False):
+                            display_audio_status(
+                                "Transcribed successfully",
+                                True,
                             )
 
-                            if metadata.get("success", False):
-                                display_audio_status(
-                                    f"Transcribed successfully in {metadata.get('duration', 'N/A')} seconds",
-                                    True,
-                                )
+                            st.markdown(
+                                f'<div class="transcription-box">'
+                                f"<strong>Transcription:</strong><br>{transcribed_text}"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
 
-                                st.markdown(
-                                    f'<div class="transcription-box">'
-                                    f"<strong>Transcription:</strong><br>{transcribed_text}"
-                                    f"</div>",
-                                    unsafe_allow_html=True,
-                                )
+                            st.session_state.transcribed_claim = transcribed_text
+                            st.session_state.last_recorded_hash = audio_hash
 
-                                st.session_state.transcribed_claim = transcribed_text
-                            else:
-                                display_audio_status(
-                                    f"Transcription failed: {metadata.get('error', 'Unknown error')}",
-                                    False,
-                                )
+                            # Automatically set claim_to_check so the claim will be analyzed below
+                            claim_to_check = transcribed_text
+                        else:
+                            display_audio_status(
+                                f"Transcription failed: {metadata.get('error', 'Unknown error')}",
+                                False,
+                            )
 
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-
-            with col2:
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            else:
+                # If already transcribed earlier during this session, show the transcription and set it for checking
                 if (
                     "transcribed_claim" in st.session_state
                     and st.session_state.transcribed_claim
                 ):
-                    if st.button("✅ Check Transcribed Claim", key="check_recorded"):
-                        claim_to_check = st.session_state.transcribed_claim
+                    st.markdown(
+                        f'<div class="transcription-box">'
+                        f"<strong>Transcription:</strong><br>{st.session_state.transcribed_claim}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                    claim_to_check = st.session_state.transcribed_claim
 
-    # Tab 3: Upload Audio File
-    with tab3:
-        st.subheader("Upload Audio File")
-        st.markdown("Upload a pre-recorded audio file (MP3, WAV, M4A, OGG, etc.)")
-
-        uploaded_file = st.file_uploader(
-            "Choose an audio file",
-            type=["mp3", "wav", "m4a", "ogg", "webm", "mp4", "mpeg"],
-            help="Maximum file size: 25 MB",
-        )
-
-        if uploaded_file:
-            st.audio(uploaded_file)
-
-            # Show audio info
-            with st.expander("📊 Audio File Info"):
-                voice_handler = st.session_state.voice_handler
-                audio_info = voice_handler.get_audio_info(uploaded_file)
-
-                if "error" not in audio_info:
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric(
-                            "Duration", f"{audio_info.get('duration_seconds', 0):.1f}s"
-                        )
-                    with col2:
-                        st.metric("Channels", audio_info.get("channels", "N/A"))
-                    with col3:
-                        st.metric(
-                            "Sample Rate", f"{audio_info.get('frame_rate', 0)} Hz"
-                        )
-
-            col1, col2 = st.columns([1, 1])
-
-            with col1:
-                if st.button("📝 Transcribe File", key="transcribe_file"):
-                    with st.spinner("🎧 Transcribing audio..."):
-                        try:
-                            voice_handler = st.session_state.voice_handler
-                            transcribed_text, metadata = voice_handler.transcribe_audio(
-                                uploaded_file, language=language
-                            )
-
-                            if metadata.get("success", False):
-                                display_audio_status(
-                                    f"Transcribed successfully! Language: {metadata.get('language', 'Unknown')}",
-                                    True,
-                                )
-
-                                st.markdown(
-                                    f'<div class="transcription-box">'
-                                    f"<strong>Transcription:</strong><br>{transcribed_text}"
-                                    f"</div>",
-                                    unsafe_allow_html=True,
-                                )
-
-                                st.session_state.uploaded_transcription = (
-                                    transcribed_text
-                                )
-                            else:
-                                display_audio_status(
-                                    f"Transcription failed: {metadata.get('error', 'Unknown error')}",
-                                    False,
-                                )
-
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-
-            with col2:
-                if (
-                    "uploaded_transcription" in st.session_state
-                    and st.session_state.uploaded_transcription
-                ):
-                    if st.button("✅ Check Transcribed Claim", key="check_uploaded"):
-                        claim_to_check = st.session_state.uploaded_transcription
+    # (Upload audio file functionality removed to simplify UI and avoid file uploads)
+    # The upload tab was removed per user preference.
 
     # Process claim if one was submitted
     if claim_to_check and claim_to_check.strip():

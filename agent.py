@@ -1,12 +1,19 @@
 from typing import List, Tuple
 
-from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.documents import Document
-from langchain_openai import ChatOpenAI
 
+from logger import logger
+
+# OpenAI removed — using Gemini client instead
 from pubmed_search import PubMedSearcher
 from vector_store import HealthKnowledgeBase
+
+# Optional Gemini adapter
+try:
+    from gemini_client import GeminiClient
+except Exception:
+    GeminiClient = None
 
 
 class HealthCheckAgent:
@@ -22,17 +29,22 @@ class HealthCheckAgent:
         self.config = config
         self.knowledge_base = knowledge_base
         self.pubmed_searcher = pubmed_searcher
-        self.model = ChatOpenAI(
-            model=config.OPENAI_MODEL, temperature=config.TEMPERATURE
-        )
-
         # Create tools
         self.tools = self._create_tools()
 
-        # Create agent
-        self.agent = create_agent(
-            self.model, self.tools, system_prompt=self._get_system_prompt()
-        )
+        # Initialize Gemini client (Gemini is the sole provider)
+        if GeminiClient is None:
+            raise RuntimeError(
+                "Gemini client not available. Install `google-genai` (pip install google-genai) and ensure it's importable."
+            )
+        if not config.GEMINI_API_KEY:
+            raise ValueError(
+                "GEMINI_API_KEY must be set in environment to use Gemini provider."
+            )
+
+        self.gemini_client = GeminiClient(config.GEMINI_API_KEY, config.GEMINI_MODEL)
+        self.model = None
+        self.agent = None
 
     def _create_tools(self):
         """Create retrieval tools for the agent."""
@@ -181,13 +193,45 @@ SPECIAL CONSIDERATIONS FOR NIGERIAN CONTEXT:
         """
         messages = []
 
-        # Stream agent response
-        for event in self.agent.stream(
-            {"messages": [{"role": "user", "content": claim}]}, stream_mode="values"
-        ):
-            messages = event["messages"]
+        logger.info("Checking claim: %s", claim)
 
-        # Get final response
-        final_response = messages[-1].content if messages else "No response generated"
+        # For Gemini-only flow, call Gemini API and include retrieval tool outputs in prompt
+        # Get curated DB results and PubMed (if any)
+        try:
+            curated_serialized, curated_docs = self.tools[0](claim)
+            logger.info("Curated DB returned %d results", len(curated_docs))
+        except Exception:
+            curated_serialized = "No matching health myths found in curated database."
 
-        return {"claim": claim, "response": final_response, "messages": messages}
+        try:
+            pubmed_serialized, pubmed_docs = self.tools[1](claim)
+            logger.info("PubMed returned %d results", len(pubmed_docs))
+        except Exception:
+            pubmed_serialized = "No PubMed results found for this query."
+
+        # Build user content with context
+        context = """
+CURATED_KNOWLEDGE:
+{cur}
+
+PUBMED_RESULTS:
+{pub}
+""".format(
+            cur=curated_serialized, pub=pubmed_serialized
+        )
+
+        user_content = f"{claim}\n\nContext:\n{context}"
+
+        # Call Gemini
+        try:
+            system_prompt = self._get_system_prompt()
+            response_text = self.gemini_client.chat(system_prompt, user_content)
+            logger.info(
+                "Gemini returned response of length %d",
+                len(response_text) if isinstance(response_text, str) else 0,
+            )
+        except Exception as e:
+            logger.exception("Error calling Gemini: %s", e)
+            response_text = f"Error calling Gemini: {e}"
+
+        return {"claim": claim, "response": response_text, "messages": []}
