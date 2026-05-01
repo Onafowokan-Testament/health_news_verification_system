@@ -176,14 +176,23 @@ body::before {
   max-width: 12rem;
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-full);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(0, 0, 0, 0.2);
-  color: #fff;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
   font-size: 0.875rem;
 }
 
 .user-form input[type="text"]::placeholder {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--color-text-soft);
+}
+
+/* Keep readable text when browser/password-manager forces light autofill */
+.user-form input[type="text"]:-webkit-autofill,
+.user-form input[type="text"]:-webkit-autofill:hover,
+.user-form input[type="text"]:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--color-text);
+  box-shadow: 0 0 0 1000px var(--color-surface) inset;
+  transition: background-color 99999s ease-out;
 }
 
 .user-form button {

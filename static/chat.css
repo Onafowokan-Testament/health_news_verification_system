@@ -122,6 +122,20 @@
   border: 1px solid var(--chat-border);
   margin-bottom: 0.5rem;
   font-size: 0.85rem;
+  background: #fff;
+  color: #111827;
+}
+
+.chat-sidebar-footer input::placeholder {
+  color: #6b7280;
+}
+
+.chat-sidebar-footer input:-webkit-autofill,
+.chat-sidebar-footer input:-webkit-autofill:hover,
+.chat-sidebar-footer input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #111827;
+  box-shadow: 0 0 0 1000px #fff inset;
+  transition: background-color 99999s ease-out;
 }
 
 .chat-sidebar-footer button.small {
