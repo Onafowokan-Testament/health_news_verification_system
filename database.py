@@ -40,11 +40,29 @@ class AdminTruth(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 
+def _normalize_database_url(url: str) -> str:
+    """Force SQLAlchemy to use psycopg v3 (`psycopg` package).
+
+    Bare ``postgresql://`` URLs default to the ``psycopg2`` dialect, which we do not
+    install. Render and others supply Postgres URLs without a ``+driver`` suffix.
+    """
+    if not url or url.startswith("sqlite"):
+        return url
+    scheme_part = url.split("://", 1)[0]
+    if "+" in scheme_part:
+        return url
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgres://")
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
+    return url
+
+
 DB_PATH = "./data/app.db"
 os.makedirs("./data", exist_ok=True)
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SQLITE_URL = f"sqlite:///{DB_PATH}"
-EFFECTIVE_DB_URL = DATABASE_URL or SQLITE_URL
+EFFECTIVE_DB_URL = _normalize_database_url(DATABASE_URL) if DATABASE_URL else SQLITE_URL
 
 _connect_args: dict = {}
 _engine_kwargs: dict = {"echo": False}
