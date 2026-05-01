@@ -16,4 +16,5 @@ jinja2
 python-multipart
 sqlmodel
 psycopg[binary]
+bcrypt
 

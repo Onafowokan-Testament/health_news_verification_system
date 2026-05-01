@@ -18,11 +18,13 @@
             {% endif %}
         </nav>
         <div class="chat-sidebar-footer">
-            <form action="/set-user" method="post">
-                <input type="text" name="user_label" value="{{ user_label }}" placeholder="Your name" aria-label="Your name">
-                <button type="submit" class="small">Save name</button>
+            <p class="chat-account-email">{{ user_email }}</p>
+            {% if user_label and user_label != user_email %}
+            <p class="chat-account-meta">History label: {{ user_label }}</p>
+            {% endif %}
+            <form action="/logout" method="post">
+                <button type="submit" class="small">Sign out</button>
             </form>
-            Saves checks under this label.
         </div>
     </aside>
 
@@ -35,17 +37,28 @@
             <span></span>
         </div>
 
-        <div class="chat-settings-row">
-            <label>
-                Language
-                <select id="chat-language" form="chat-composer-form">
-                    {% for lang in ["English", "Pidgin", "Yoruba", "Hausa", "Igbo"] %}
-                    <option value="{{ lang }}" {% if lang == "English" %}selected{% endif %}>{{ lang }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label><input type="checkbox" id="opt-slow" checked> Slower speech</label>
-            <label><input type="checkbox" id="opt-audio-out"> Read reply aloud</label>
+        <div class="chat-settings-bar" role="toolbar" aria-label="Language and speech">
+            <div class="chat-settings-cluster chat-settings-cluster--lang">
+                <label class="chat-lang-field" for="chat-language">
+                    <span class="chat-settings-heading">Language</span>
+                    <select id="chat-language" class="chat-lang-select" form="chat-composer-form">
+                        {% for lang in ["English", "Pidgin", "Yoruba", "Hausa", "Igbo"] %}
+                        <option value="{{ lang }}" {% if lang == "English" %}selected{% endif %}>{{ lang }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+            <div class="chat-settings-cluster chat-settings-cluster--speech" aria-label="Speech output">
+                <span class="chat-settings-heading chat-settings-heading--inline">Speech</span>
+                <label class="chat-chip-toggle">
+                    <input type="checkbox" id="opt-slow" checked>
+                    <span>Slower speech</span>
+                </label>
+                <label class="chat-chip-toggle">
+                    <input type="checkbox" id="opt-audio-out">
+                    <span>Read reply aloud</span>
+                </label>
+            </div>
         </div>
 
         <div class="chat-messages" id="chat-messages">

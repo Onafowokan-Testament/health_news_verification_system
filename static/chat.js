@@ -130,6 +130,10 @@
         return;
       }
       removeLoading();
+      if (res.status === 401) {
+        window.location.href = "/login?next=/chat";
+        return;
+      }
       if (!res.ok) {
         let detail = data.detail ?? data.error ?? "Request failed.";
         if (Array.isArray(detail)) {
@@ -176,6 +180,10 @@
         return;
       }
       removeLoading();
+      if (res.status === 401) {
+        window.location.href = "/login?next=/chat";
+        return;
+      }
       if (!res.ok) {
         let detail = data.detail ?? data.error ?? "Voice request failed.";
         if (Array.isArray(detail)) {

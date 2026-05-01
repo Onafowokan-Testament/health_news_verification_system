@@ -20,6 +20,14 @@ class ClaimCheckRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True, max_length=255)
+    password_hash: str = Field(max_length=255)
+    display_name: str = Field(default="", max_length=100)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class AdminTruth(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     claim: str = Field(index=True)
@@ -38,8 +46,21 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SQLITE_URL = f"sqlite:///{DB_PATH}"
 EFFECTIVE_DB_URL = DATABASE_URL or SQLITE_URL
 
-connect_args = {"check_same_thread": False} if EFFECTIVE_DB_URL.startswith("sqlite") else {}
-engine = create_engine(EFFECTIVE_DB_URL, echo=False, connect_args=connect_args)
+_connect_args: dict = {}
+_engine_kwargs: dict = {"echo": False}
+
+if EFFECTIVE_DB_URL.startswith("sqlite"):
+    _connect_args = {"check_same_thread": False}
+    _engine_kwargs["connect_args"] = _connect_args
+else:
+    # Recover dropped connections (common with managed Postgres); optional SSL mode via env.
+    _engine_kwargs["pool_pre_ping"] = True
+    _ssl = os.getenv("DATABASE_SSLMODE", "").strip()
+    if _ssl:
+        _connect_args = {"sslmode": _ssl}
+        _engine_kwargs["connect_args"] = _connect_args
+
+engine = create_engine(EFFECTIVE_DB_URL, **_engine_kwargs)
 
 
 def init_db() -> None:

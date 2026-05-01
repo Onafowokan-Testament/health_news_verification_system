@@ -80,6 +80,15 @@ class Config:
             )
             self.EMBEDDING_MODEL = replacement
 
+        chat_model = (self.GEMINI_MODEL or "").strip()
+        cm_norm = chat_model.lower().removeprefix("models/")
+        if "embedding" in cm_norm or cm_norm.startswith("text-embedding"):
+            print(
+                f"⚠️  GEMINI_MODEL '{chat_model}' is not valid for chat (generate_content) — "
+                f"using 'gemini-2.5-flash'. Set GEMINI_MODEL to a chat model in .env."
+            )
+            self.GEMINI_MODEL = "gemini-2.5-flash"
+
     def validate(self) -> bool:
         """Validate required configuration."""
         if not self.GEMINI_API_KEY:

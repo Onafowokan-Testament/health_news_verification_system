@@ -1,5 +1,4 @@
 from pathlib import Path
-from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -14,6 +13,9 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import quote
+
+import bcrypt
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -27,7 +29,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from agent import HealthCheckAgent
 from config import Config
 from data_loader import get_all_myths
-from database import AdminTruth, ClaimCheckRecord, engine, init_db
+from database import AdminTruth, ClaimCheckRecord, User, engine, init_db
 from logger import logger
 from pubmed_search import PubMedSearcher
 from vector_store import HealthKnowledgeBase
@@ -136,8 +138,63 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-def _current_user(request: Request) -> str:
-    return request.session.get("user_label", "guest")
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        return False
+
+
+def _session_record_label(request: Request) -> str:
+    """Label stored on ClaimCheckRecord rows for the logged-in user."""
+    raw = request.session.get("user_label")
+    if raw:
+        return str(raw).strip()[:100]
+    uid = request.session.get("user_id")
+    if uid and request.session.get("user_email"):
+        return str(request.session["user_email"])[:100]
+    return "guest"
+
+
+def _template_ctx(request: Request, **extra) -> dict:
+    ctx = {
+        "request": request,
+        "is_admin": _is_admin(request),
+        "logged_in": bool(request.session.get("user_id")),
+        "user_email": request.session.get("user_email") or "",
+        "user_label": request.session.get("user_label") or "",
+    }
+    ctx.update(extra)
+    return ctx
+
+
+def _require_login_redirect(request: Request, next_path: str) -> RedirectResponse | None:
+    if request.session.get("user_id"):
+        return None
+    safe = next_path if next_path.startswith("/") else "/chat"
+    return RedirectResponse(url=f"/login?next={quote(safe, safe='')}", status_code=303)
+
+
+def _require_user_api(request: Request) -> JSONResponse | None:
+    if request.session.get("user_id"):
+        return None
+    return JSONResponse({"error": "Sign in required.", "detail": "Sign in required."}, status_code=401)
+
+
+def _set_user_session(request: Request, user: User) -> None:
+    label = (user.display_name or "").strip()[:100] or (user.email or "")[:100]
+    request.session["user_id"] = user.id
+    request.session["user_email"] = user.email
+    request.session["user_label"] = label
+
+
+def _clear_user_session(request: Request) -> None:
+    for key in ("user_id", "user_email", "user_label"):
+        request.session.pop(key, None)
 
 
 def _is_admin(request: Request) -> bool:
@@ -216,46 +273,115 @@ def _tts_b64(
 
 @app.get("/", response_class=HTMLResponse)
 async def landing(request: Request):
+    return templates.TemplateResponse("landing.html", _template_ctx(request))
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, next: str = "/chat"):
+    if request.session.get("user_id"):
+        dest = next if next.startswith("/") else "/chat"
+        return RedirectResponse(url=dest, status_code=303)
+    safe_next = next if next.startswith("/") else "/chat"
     return templates.TemplateResponse(
-        "landing.html",
-        {
-            "request": request,
-            "user_label": _current_user(request),
-            "is_admin": _is_admin(request),
-        },
+        "login.html",
+        _template_ctx(request, error="", next_url=safe_next),
     )
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_submit(
+    request: Request,
+    email: str = Form(default=""),
+    password: str = Form(default=""),
+    next: str = Form(default="/chat"),
+):
+    safe_next = next if next.startswith("/") else "/chat"
+    err_ctx = lambda msg: _template_ctx(request, error=msg, next_url=safe_next)
+
+    em = email.strip().lower()
+    if not em or "@" not in em:
+        return templates.TemplateResponse("login.html", err_ctx("Enter a valid email address."))
+    if not password:
+        return templates.TemplateResponse("login.html", err_ctx("Password is required."))
+
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == em)).first()
+    if not user or not _verify_password(password, user.password_hash):
+        return templates.TemplateResponse("login.html", err_ctx("Invalid email or password."))
+
+    _set_user_session(request, user)
+    return RedirectResponse(url=safe_next, status_code=303)
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    if request.session.get("user_id"):
+        return RedirectResponse(url="/chat", status_code=303)
+    return templates.TemplateResponse("register.html", _template_ctx(request, error=""))
+
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_submit(
+    request: Request,
+    email: str = Form(default=""),
+    password: str = Form(default=""),
+    display_name: str = Form(default=""),
+):
+    em = email.strip().lower()
+    if not em or "@" not in em:
+        return templates.TemplateResponse(
+            "register.html",
+            _template_ctx(request, error="Enter a valid email address."),
+        )
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            "register.html",
+            _template_ctx(request, error="Password must be at least 8 characters."),
+        )
+
+    display_clean = display_name.strip()[:100]
+
+    with Session(engine) as session:
+        existing = session.exec(select(User).where(User.email == em)).first()
+        if existing:
+            return templates.TemplateResponse(
+                "register.html",
+                _template_ctx(request, error="An account with this email already exists."),
+            )
+        user = User(
+            email=em,
+            password_hash=_hash_password(password),
+            display_name=display_clean,
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+    _set_user_session(request, user)
+    return RedirectResponse(url="/chat", status_code=303)
+
+
+@app.post("/logout")
+async def logout(request: Request):
+    _clear_user_session(request)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request):
-    return templates.TemplateResponse(
-        "chat.html",
-        {
-            "request": request,
-            "user_label": _current_user(request),
-            "is_admin": _is_admin(request),
-        },
-    )
-
-
-@app.post("/set-user")
-async def set_user(request: Request, user_label: str = Form(default="guest")):
-    cleaned = user_label.strip()[:100] or "guest"
-    request.session["user_label"] = cleaned
-    ref = request.headers.get("referer") or ""
-    try:
-        path = urlparse(ref).path or ""
-    except Exception:
-        path = ""
-    if path.startswith("/chat"):
-        return RedirectResponse(url="/chat", status_code=303)
-    return RedirectResponse(url="/", status_code=303)
+    redir = _require_login_redirect(request, "/chat")
+    if redir:
+        return redir
+    return templates.TemplateResponse("chat.html", _template_ctx(request))
 
 
 @app.post("/api/chat")
 async def api_chat(request: Request, body: ChatRequest):
+    deny = _require_user_api(request)
+    if deny:
+        return deny
     services: AppServices = request.app.state.services
-    user_label = _current_user(request)
+    user_label = _session_record_label(request)
     claim = body.message.strip()
     try:
         result = services.agent.check_claim(claim)
@@ -295,8 +421,11 @@ async def api_chat_voice(
     slow_speech: str = Form(default="true"),
     audio_response: str = Form(default="false"),
 ):
+    deny = _require_user_api(request)
+    if deny:
+        return deny
     services: AppServices = request.app.state.services
-    user_label = _current_user(request)
+    user_label = _session_record_label(request)
     slow = _form_bool(slow_speech)
     want_audio = _form_bool(audio_response)
 
@@ -353,7 +482,10 @@ async def api_chat_voice(
 
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
-    user_label = _current_user(request)
+    redir = _require_login_redirect(request, "/history")
+    if redir:
+        return redir
+    user_label = _session_record_label(request)
     with Session(engine) as session:
         statement = (
             select(ClaimCheckRecord)
@@ -364,63 +496,38 @@ async def history_page(request: Request):
         records = list(session.exec(statement).all())
     return templates.TemplateResponse(
         "history.html",
-        {
-            "request": request,
-            "user_label": user_label,
-            "is_admin": _is_admin(request),
-            "records": records,
-        },
+        _template_ctx(request, records=records),
     )
 
 
 @app.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request):
-    user_label = _current_user(request)
-    return templates.TemplateResponse(
-        "about.html",
-        {"request": request, "user_label": user_label, "is_admin": _is_admin(request)},
-    )
+    return templates.TemplateResponse("about.html", _template_ctx(request))
 
 
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login_page(request: Request):
-    user_label = _current_user(request)
     return templates.TemplateResponse(
         "admin_login.html",
-        {
-            "request": request,
-            "user_label": user_label,
-            "is_admin": _is_admin(request),
-            "error": "",
-            "admin_enabled": _admin_enabled(),
-        },
+        _template_ctx(request, error="", admin_enabled=_admin_enabled()),
     )
 
 
 @app.post("/admin/login", response_class=HTMLResponse)
 async def admin_login(request: Request, password: str = Form(default="")):
-    user_label = _current_user(request)
     if not _admin_enabled():
         return templates.TemplateResponse(
             "admin_login.html",
-            {
-                "request": request,
-                "user_label": user_label,
-                "is_admin": False,
-                "error": "ADMIN_PASSWORD is not configured on the server.",
-                "admin_enabled": False,
-            },
+            _template_ctx(
+                request,
+                error="ADMIN_PASSWORD is not configured on the server.",
+                admin_enabled=False,
+            ),
         )
     if password != _admin_password():
         return templates.TemplateResponse(
             "admin_login.html",
-            {
-                "request": request,
-                "user_label": user_label,
-                "is_admin": False,
-                "error": "Invalid admin password.",
-                "admin_enabled": True,
-            },
+            _template_ctx(request, error="Invalid admin password.", admin_enabled=True),
         )
     request.session["is_admin"] = True
     return RedirectResponse(url="/admin", status_code=303)
@@ -437,19 +544,11 @@ async def admin_page(request: Request):
     if not _is_admin(request):
         return RedirectResponse(url="/admin/login", status_code=303)
 
-    user_label = _current_user(request)
     with Session(engine) as session:
         truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
     return templates.TemplateResponse(
         "admin.html",
-        {
-            "request": request,
-            "user_label": user_label,
-            "is_admin": True,
-            "truths": truths,
-            "message": "",
-            "error": "",
-        },
+        _template_ctx(request, truths=truths, message="", error=""),
     )
 
 
@@ -467,7 +566,6 @@ async def admin_add_truth(
     if not _is_admin(request):
         return RedirectResponse(url="/admin/login", status_code=303)
 
-    user_label = _current_user(request)
     claim = claim.strip()
     explanation = explanation.strip()
     if not claim or not explanation:
@@ -475,14 +573,12 @@ async def admin_add_truth(
             truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
         return templates.TemplateResponse(
             "admin.html",
-            {
-                "request": request,
-                "user_label": user_label,
-                "is_admin": True,
-                "truths": truths,
-                "message": "",
-                "error": "Claim and explanation are required.",
-            },
+            _template_ctx(
+                request,
+                truths=truths,
+                message="",
+                error="Claim and explanation are required.",
+            ),
         )
 
     with Session(engine) as session:
@@ -505,14 +601,12 @@ async def admin_add_truth(
         truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
     return templates.TemplateResponse(
         "admin.html",
-        {
-            "request": request,
-            "user_label": user_label,
-            "is_admin": True,
-            "truths": truths,
-            "message": "Truth added and index refreshed.",
-            "error": "",
-        },
+        _template_ctx(
+            request,
+            truths=truths,
+            message="Truth added and index refreshed.",
+            error="",
+        ),
     )
 
 

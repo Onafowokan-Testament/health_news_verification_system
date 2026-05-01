@@ -16,8 +16,12 @@
             <a href="/" class="brand">MedVer</a>
             <nav class="nav-links" aria-label="Main">
                 <a href="/">Overview</a>
+                {% if logged_in %}
                 <a href="/chat" class="nav-pill">Chat</a>
                 <a href="/history">History</a>
+                {% else %}
+                <a href="/login?next=/chat" class="nav-pill">Sign in</a>
+                {% endif %}
                 <a href="/about">About</a>
                 {% if is_admin %}
                 <a href="/admin">Admin</a>
@@ -25,11 +29,16 @@
                 <a href="/admin/login">Admin</a>
                 {% endif %}
             </nav>
-            <div class="header-actions">
-                <form action="/set-user" method="post" class="user-form">
-                    <input type="text" name="user_label" value="{{ user_label }}" placeholder="Your name" aria-label="User name">
-                    <button type="submit">Save</button>
+            <div class="header-actions header-account">
+                {% if logged_in %}
+                <span class="header-account-label" title="{{ user_email }}">{{ user_email }}</span>
+                <form action="/logout" method="post" class="user-form">
+                    <button type="submit">Sign out</button>
                 </form>
+                {% else %}
+                <a href="/login?next=/chat" class="link-inline">Sign in</a>
+                <a href="/register" class="btn-header-register">Register</a>
+                {% endif %}
                 {% if is_admin %}
                 <form action="/admin/logout" method="post" class="user-form">
                     <button type="submit">Logout admin</button>

@@ -163,6 +163,43 @@ body::before {
   gap: var(--space-sm);
 }
 
+.header-account-label {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--color-header-muted);
+}
+
+.link-inline {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  text-decoration: none;
+}
+
+.link-inline:hover {
+  text-decoration: underline;
+}
+
+.btn-header-register {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-xs) var(--space-md);
+  font-size: 0.8125rem;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  color: var(--color-header) !important;
+  background: #fff;
+  text-decoration: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.btn-header-register:hover {
+  background: rgba(255, 255, 255, 0.94);
+}
+
 .user-form {
   display: flex;
   flex-wrap: wrap;
@@ -329,6 +366,39 @@ body::before {
   color: var(--color-text-soft);
 }
 
+.auth-panel {
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.auth-panel .form-actions {
+  padding-top: var(--space-md);
+}
+
+.auth-panel button[type="submit"] {
+  width: 100%;
+  min-width: unset;
+  max-width: none;
+  padding: 0.88rem 1.35rem;
+  border-radius: var(--radius-full);
+  font-size: 1.02rem;
+  letter-spacing: 0.01em;
+}
+
+.form-hint {
+  display: block;
+  margin-top: var(--space-xs);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-soft);
+}
+
+.optional {
+  font-weight: 500;
+  color: var(--color-text-soft);
+}
+
 .form-row-2 {
   display: grid;
   gap: var(--space-md);
@@ -343,6 +413,7 @@ body::before {
 textarea,
 select,
 input[type="text"],
+input[type="email"],
 input[type="number"],
 input[type="password"],
 input[type="file"].file-input-native {
@@ -360,6 +431,7 @@ input[type="file"].file-input-native {
 textarea:hover,
 select:hover,
 input[type="text"]:hover,
+input[type="email"]:hover,
 input[type="number"]:hover,
 input[type="password"]:hover {
   border-color: rgba(15, 118, 110, 0.35);
@@ -368,6 +440,7 @@ input[type="password"]:hover {
 textarea:focus,
 select:focus,
 input[type="text"]:focus,
+input[type="email"]:focus,
 input[type="number"]:focus,
 input[type="password"]:focus {
   outline: none;
@@ -915,6 +988,22 @@ code {
 
 .btn-landing-secondary:hover {
   border-color: var(--color-accent);
+  color: var(--color-accent) !important;
+}
+
+.btn-landing-ghost {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  color: var(--color-text-muted) !important;
+  text-decoration: none !important;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.btn-landing-ghost:hover {
   color: var(--color-accent) !important;
 }
 
