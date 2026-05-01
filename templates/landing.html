@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}MedVer — verify health claims{% endblock %}
+{% block content %}
+
+<section class="landing-hero">
+    <div class="landing-hero-inner">
+        <span class="hero-badge">Evidence-informed · Plain language</span>
+        <h1 class="landing-title">Health claims, checked like a conversation</h1>
+        <p class="landing-lead">
+            <strong>MedVer</strong> helps you understand viral health rumours — especially myths common in Nigeria —
+            using curated facts, optional PubMed literature, and AI explanations you can actually read or hear.
+        </p>
+        <div class="landing-cta">
+            <a href="/chat" class="btn-landing-primary">Open chat</a>
+            <a href="/about" class="btn-landing-secondary">How it works</a>
+        </div>
+        <p class="landing-note">Not medical advice. For emergencies, seek professional care immediately.</p>
+    </div>
+    <div class="landing-hero-visual" aria-hidden="true">
+        <div class="mock-chat">
+            <div class="mock-chat-row user"><span>You</span><p>Does hot water cure malaria?</p></div>
+            <div class="mock-chat-row bot"><span>MedVer</span><p><strong>FALSE</strong> — Malaria needs prescribed treatment. Hot water does not kill the parasite…</p></div>
+        </div>
+    </div>
+</section>
+
+<section class="landing-section">
+    <h2 class="landing-section-title">Why MedVer</h2>
+    <div class="landing-grid-3">
+        <article class="landing-feature-card">
+            <div class="landing-feature-icon" aria-hidden="true">💬</div>
+            <h3>Chat-first</h3>
+            <p>Ask naturally — type or speak. No forms, no “upload video”; just a mic icon when you want voice.</p>
+        </article>
+        <article class="landing-feature-card">
+            <div class="landing-feature-icon" aria-hidden="true">📚</div>
+            <h3>Grounded answers</h3>
+            <p>Starts from a curated myth library you can extend via admin tools, then layers evidence when PubMed is enabled.</p>
+        </article>
+        <article class="landing-feature-card">
+            <div class="landing-feature-icon" aria-hidden="true">🔊</div>
+            <h3>Listen back</h3>
+            <p>Optional text-to-speech so answers work for people who prefer hearing over reading.</p>
+        </article>
+    </div>
+</section>
+
+<section class="landing-section landing-section-alt">
+    <div class="landing-split">
+        <div>
+            <h2 class="landing-section-title">Built for trust</h2>
+            <ul class="landing-list">
+                <li>Clear verdict labels: TRUE, FALSE, PARTIALLY TRUE, UNCLEAR</li>
+                <li>Confidence and citations called out in the reply</li>
+                <li>History saved per user label — pick a name in the sidebar</li>
+                <li>Open about page for safety and limitations</li>
+            </ul>
+            <a href="/chat" class="link-quiet">Try MedVer now →</a>
+        </div>
+        <div class="landing-quote-card">
+            <blockquote>
+                Misinformation spreads fastest where explanations feel judgemental. MedVer is designed to correct myths respectfully — especially for older adults and caregivers.
+            </blockquote>
+        </div>
+    </div>
+</section>
+
+<section class="landing-cta-band">
+    <h2>Ready to verify a claim?</h2>
+    <a href="/chat" class="btn-landing-primary btn-landing-large">Start chatting</a>
+</section>
+
+{% endblock %}

@@ -32,7 +32,7 @@ def check_env_file():
     return True
 
 def main():
-    print("🏥 Nigerian Health Claim Checker - Setup")
+    print("🏥 MedVer — setup")
     print("=" * 50)
     
     check_python_version()
@@ -43,10 +43,10 @@ def main():
     
     print("\n" + "=" * 50)
     if has_env:
-        print("✅ Setup complete! Run: streamlit run app.py")
+        print("✅ Setup complete! Run: uvicorn web_app:app --reload")
     else:
         print("⚠️  Please edit .env file with your API keys")
-        print("   Then run: streamlit run app.py")
+        print("   Then run: uvicorn web_app:app --reload")
 
 if __name__ == "__main__":
     main()

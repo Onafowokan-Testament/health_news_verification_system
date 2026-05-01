@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}History — MedVer{% endblock %}
+{% block content %}
+<section class="hero">
+    <span class="hero-badge">Your activity</span>
+    <h1>History</h1>
+    <p class="hero-lead">Checks saved for <strong>{{ user_label }}</strong>.</p>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h2>Past verifications</h2>
+        <p>Newest first · up to 100 rows</p>
+    </div>
+    {% if records %}
+    <div class="table-scroll">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Verdict</th>
+                    <th>Claim</th>
+                    <th>Language</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in records %}
+                <tr>
+                    <td>{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                    <td>
+                        {% if item.verdict == 'TRUE' %}
+                        <span class="badge-verdict badge-true">TRUE</span>
+                        {% elif item.verdict == 'FALSE' %}
+                        <span class="badge-verdict badge-false">FALSE</span>
+                        {% elif item.verdict == 'PARTIALLY TRUE' %}
+                        <span class="badge-verdict badge-partial">PARTIAL</span>
+                        {% else %}
+                        <span class="badge-verdict badge-unclear">{{ item.verdict }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.claim }}</td>
+                    <td>{{ item.language }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body empty-state">
+        <p>No records yet.</p>
+        <p><a href="/chat">Verify a claim in Chat →</a></p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

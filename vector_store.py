@@ -16,35 +16,57 @@ except Exception:
 class GeminiEmbeddings:
     """Minimal embeddings adapter using Google GenAI SDK."""
 
-    def __init__(self, model: str = "gemini-text-embedding-1.0"):
+    def __init__(self, model: str = "gemini-embedding-001"):
         if genai is None:
             raise RuntimeError(
                 "google-genai package not installed. Install with: pip install google-genai"
             )
         self.model = model
-        # Initialize client
         try:
             self.client = genai.Client()
         except Exception:
-            import os
-
-            os.environ["GEMINI_API_KEY"] = os.getenv("GEMINI_API_KEY", "")
+            os.environ.setdefault("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
             self.client = genai.Client()
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        # Use the official embeddings API
-        resp = self.client.embeddings.create(model=self.model, input=texts)
-        embeddings = []
-        for item in getattr(resp, "data", []) or []:
-            vec = (
-                item.get("embedding")
-                if isinstance(item, dict)
-                else getattr(item, "embedding", None)
+        """Batch embed for indexing (retrieval document task)."""
+        if not texts:
+            return []
+        all_vecs: List[List[float]] = []
+        chunk_size = 100
+        for i in range(0, len(texts), chunk_size):
+            chunk = texts[i : i + chunk_size]
+            resp = self.client.models.embed_content(
+                model=self.model,
+                contents=chunk,
+                config={"task_type": "RETRIEVAL_DOCUMENT"},
             )
-            if vec is None:
-                raise RuntimeError("Unexpected embeddings response from Gemini client")
-            embeddings.append(vec)
-        return embeddings
+            embs = resp.embeddings or []
+            if len(embs) != len(chunk):
+                raise RuntimeError(
+                    f"Embedding count mismatch: expected {len(chunk)}, got {len(embs)}"
+                )
+            for emb in embs:
+                vals = getattr(emb, "values", None)
+                if not vals:
+                    raise RuntimeError("Unexpected embeddings response from Gemini client")
+                all_vecs.append(list(vals))
+        return all_vecs
+
+    def embed_query(self, text: str) -> List[float]:
+        """Single-query embedding for similarity search."""
+        resp = self.client.models.embed_content(
+            model=self.model,
+            contents=[text],
+            config={"task_type": "RETRIEVAL_QUERY"},
+        )
+        embs = resp.embeddings or []
+        if len(embs) != 1:
+            raise RuntimeError(f"Expected 1 query embedding, got {len(embs)}")
+        vals = getattr(embs[0], "values", None)
+        if not vals:
+            raise RuntimeError("Unexpected query embedding from Gemini client")
+        return list(vals)
 
 
 class HealthKnowledgeBase:
@@ -54,7 +76,7 @@ class HealthKnowledgeBase:
         """Initialize vector store."""
         self.config = config
         # Initialize embeddings using Gemini adapter (must be installed)
-        logger.info("Initializing embeddings (Gemini): %s", config.EMBEDDING_MODEL)
+        logger.info("Initializing embeddings (Gemini): {}", config.EMBEDDING_MODEL)
         try:
             self.embeddings = GeminiEmbeddings(model=config.EMBEDDING_MODEL)
             logger.info("Embeddings initialized successfully")
@@ -109,6 +131,23 @@ Category: {myth['category']}
         # Add documents to vector store
         self.vector_store.add_documents(docs)
         logger.info("Indexed %d health myths into vector store", len(docs))
+
+    def rebuild_index(self, myths: List[dict]) -> None:
+        """
+        Rebuild the collection from scratch using provided myths.
+        Useful after admin edits to keep retrieval in sync.
+        """
+        try:
+            existing = self.vector_store.get()
+            ids = existing.get("ids", []) if isinstance(existing, dict) else []
+            if ids:
+                self.vector_store.delete(ids=ids)
+                logger.info("Deleted {} existing vector documents", len(ids))
+        except Exception as e:
+            logger.exception("Failed clearing vector collection: %s", e)
+            raise RuntimeError(f"Failed to clear vector collection: {e}")
+
+        self.index_myths(myths)
 
     def search(self, query: str, k: int = 2) -> List[Document]:
         """

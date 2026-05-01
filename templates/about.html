@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}About — MedVer{% endblock %}
+{% block content %}
+<section class="hero">
+    <span class="hero-badge">Trust &amp; context</span>
+    <h1>About MedVer</h1>
+    <p class="hero-lead">Evidence-based help for spotting common health misinformation — starting from Nigeria-focused myths and trusted sources.</p>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h2>How it works</h2>
+        <p>A simple pipeline built for clarity.</p>
+    </div>
+    <div class="card-body">
+        <ul class="about-list">
+            <li>Searches a curated Nigerian health myths knowledge base first.</li>
+            <li>Optionally fetches PubMed research when you enable it in configuration.</li>
+            <li>Uses Gemini to produce readable verdicts, explanations, and citations.</li>
+            <li>Supports typed claims and uploaded audio (transcribed before checking).</li>
+        </ul>
+    </div>
+</section>
+
+<section class="card info">
+    <div class="card-header">
+        <h2>Safety notice</h2>
+    </div>
+    <div class="card-body">
+        <p style="margin-top:0;">This tool is informational and does <strong>not</strong> replace professional medical advice, diagnosis, or treatment.</p>
+        <p style="margin-bottom:0;">If symptoms are severe or urgent — chest pain, trouble breathing, heavy bleeding, confusion — seek emergency care immediately.</p>
+        <p style="margin-top:var(--space-lg);margin-bottom:0;"><a href="/chat" class="btn-landing-secondary" style="display:inline-flex;">Open MedVer chat →</a></p>
+    </div>
+</section>
+{% endblock %}

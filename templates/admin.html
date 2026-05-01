@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Admin — MedVer{% endblock %}
+{% block content %}
+<section class="hero">
+    <span class="hero-badge">Restricted</span>
+    <h1>Admin</h1>
+    <p class="hero-lead">Manage curated truth records used for retrieval. Changes trigger a search index refresh.</p>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h2>Add truth record</h2>
+        <p>These entries are merged with the built-in myth list for embedding search.</p>
+    </div>
+    <form action="/admin/add-truth" method="post" class="form-grid">
+        <div>
+            <label for="claim">Claim</label>
+            <textarea id="claim" name="claim" rows="2" required></textarea>
+        </div>
+
+        <div class="form-row-2">
+            <div>
+                <label for="verdict">Verdict</label>
+                <select id="verdict" name="verdict">
+                    <option value="TRUE">TRUE</option>
+                    <option value="FALSE">FALSE</option>
+                    <option value="PARTIALLY TRUE">PARTIALLY TRUE</option>
+                    <option value="UNCLEAR">UNCLEAR</option>
+                </select>
+            </div>
+            <div>
+                <label for="confidence">Confidence (0–100)</label>
+                <input id="confidence" name="confidence" type="number" min="0" max="100" value="90">
+            </div>
+        </div>
+
+        <div>
+            <label for="explanation">Explanation</label>
+            <textarea id="explanation" name="explanation" rows="4" required></textarea>
+        </div>
+
+        <div>
+            <label for="sources_text">Sources (one per line)</label>
+            <textarea id="sources_text" name="sources_text" rows="4" placeholder="WHO guideline&#10;NCDC advisory"></textarea>
+        </div>
+
+        <div class="form-row-2">
+            <div>
+                <label for="category">Category</label>
+                <input id="category" name="category" type="text" value="general">
+            </div>
+            <div>
+                <label for="language">Language code</label>
+                <input id="language" name="language" type="text" value="en">
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit">Add &amp; reindex</button>
+        </div>
+    </form>
+
+    {% if message %}
+    <div class="card-footer">
+        <p class="ok-text" style="margin:0;">{{ message }}</p>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="card-footer">
+        <p class="error-text" style="margin:0;">{{ error }}</p>
+    </div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h2>Existing admin truths</h2>
+        <p>Delete rows you no longer want in the vector index.</p>
+    </div>
+    {% if truths %}
+    <div class="table-scroll">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Claim</th>
+                    <th>Verdict</th>
+                    <th>%</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in truths %}
+                <tr>
+                    <td>{{ t.id }}</td>
+                    <td>{{ t.claim }}</td>
+                    <td>{{ t.verdict }}</td>
+                    <td>{{ t.confidence }}</td>
+                    <td class="table-actions">
+                        <form action="/admin/delete-truth" method="post" style="margin:0;">
+                            <input type="hidden" name="truth_id" value="{{ t.id }}">
+                            <button type="submit" class="danger-btn">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body empty-state">
+        <p>No admin-added truths yet.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

@@ -2,13 +2,18 @@ langchain
 langchain-chroma
 langchain-community
 biopython
-streamlit
 gtts
 python-dotenv
 chromadb
 tiktoken
 google-genai
 pydub
-streamlit-audiorecorder
+audioop-lts
 loguru
+fastapi
+uvicorn
+jinja2
+python-multipart
+sqlmodel
+psycopg[binary]
 

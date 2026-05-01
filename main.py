@@ -6,6 +6,11 @@ Usage: python main.py "Does hot water cure malaria?"
 """
 
 import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from agent import HealthCheckAgent
 from config import Config
@@ -25,7 +30,7 @@ def main():
 
     claim = " ".join(sys.argv[1:])
 
-    print("🏥 Nigerian Health Claim Checker")
+    print("🏥 MedVer")
     print("=" * 70)
     print(f"\nChecking claim: {claim}\n")
 
@@ -36,7 +41,12 @@ def main():
         config.validate()
         logger.info("Config validated")
 
-        pubmed = PubMedSearcher(config.PUBMED_EMAIL)
+        pubmed = PubMedSearcher(
+            email=config.PUBMED_EMAIL or None,
+            api_key=config.PUBMED_API_KEY or None,
+            tool=config.PUBMED_TOOL or "MedVer",
+            enabled=config.PUBMED_ENABLED,
+        )
         kb = HealthKnowledgeBase(config)
 
         # Index myths if needed

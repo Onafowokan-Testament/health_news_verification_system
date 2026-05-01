@@ -6,11 +6,11 @@ This RAG (Retrieval-Augmented Generation) system helps older adults verify healt
 
 **Three core components**:
 
-1. **Vector Store** ([vector_store.py](../vector_store.py)) - Chroma DB storing 15+ curated Nigerian health myths with embeddings (text-embedding-3-large)
+1. **Vector Store** ([vector_store.py](../vector_store.py)) - Chroma DB storing curated Nigerian health myths with Gemini embeddings
 2. **Search Layer** - Dual fallback strategy: first tries curated myths, then PubMed if needed
 3. **RAG Agent** ([agent.py](../agent.py)) - LangChain agent with tools that returns structured verdicts (TRUE/FALSE/PARTIALLY TRUE/UNCLEAR) with confidence scores
 
-**Data flow**: User query → Agent searches curated DB → If no match, searches PubMed → GPT-4o generates response with verdict/confidence/sources → Streamlit UI displays with voice TTS output.
+**Data flow**: User query → Retrieve curated myths (+ optional PubMed) → Gemini generates verdict/confidence/sources → FastAPI + Jinja UI (+ optional TTS).
 
 ## Key Patterns
 
@@ -69,7 +69,7 @@ Agent ALWAYS uses this order:
 ### Adding a New Health Myth
 
 1. Add dict to `CURATED_HEALTH_MYTHS` list in [data_loader.py](../data_loader.py) with required fields
-2. Run `python main.py` or `streamlit run app.py` - myths auto-index on first startup via `kb.index_myths()`
+2. Run `python main.py` or `uvicorn web_app:app --reload` — myths auto-index / rebuild on FastAPI startup
 3. Test with: `python main.py "Your claim here"`
 
 ### Testing Claims
@@ -78,8 +78,8 @@ Agent ALWAYS uses this order:
 # CLI interface (outputs result to terminal)
 python main.py "Does hot water cure malaria?"
 
-# Streamlit UI (interactive, with voice, shows agent reasoning)
-streamlit run app.py
+# Web UI (HTML/CSS via Jinja)
+uvicorn web_app:app --reload
 ```
 
 ### Debugging Agent Decisions
@@ -121,17 +121,18 @@ Used for metadata filtering: `malaria`, `covid`, `diabetes`, `antibiotics`, `fev
 - LangChain ecosystem: `langchain`, `langchain-openai`, `langchain-chroma`, `langchain-community`
 - Vector DB: `chromadb` (persisted in `./data/chroma_db`)
 - PubMed: BioPython `biopython`
-- UI: `streamlit` with `streamlit-audiorecorder`
+- UI: FastAPI + Jinja2 (`web_app.py`, `templates/`, `static/`)
 - TTS: `gtts` (Google Text-to-Speech)
-- Embeddings: OpenAI's `text-embedding-3-large` model
+- Gemini via `google-genai`; embeddings via Gemini (`vector_store.py`)
 
 ## Environment Variables Required
 
 ```bash
-OPENAI_API_KEY=sk-...          # Must be set (validated in config.validate())
-PUBMED_EMAIL=user@example.com  # Required by NCBI (warns if default)
-LANGSMITH_API_KEY=...          # Optional, enables tracing if present
-OPENAI_MODEL=gpt-4o            # Default, can override
+GEMINI_API_KEY=...
+PUBMED_EMAIL=...          # Only when PubMed enabled (see config.py)
+PUBMED_ENABLED=true|false
+DATABASE_URL=...          # Optional Postgres; else SQLite
+ADMIN_PASSWORD=...       # Optional admin UI
 ```
 
 ## Common Issues & Solutions

@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from Bio import Entrez
 
@@ -9,15 +9,36 @@ from logger import logger
 class PubMedSearcher:
     """Real PubMed API searcher using BioPython."""
 
-    def __init__(self, email: str):
+    def __init__(
+        self,
+        *,
+        email: Optional[str] = None,
+        api_key: Optional[str] = None,
+        tool: Optional[str] = "MedVer",
+        enabled: bool = False,
+    ):
         """
         Initialize PubMed searcher.
 
         Args:
-            email: Your email (required by NCBI)
+            email: Contact email for NCBI Entrez (recommended when enabled).
+            api_key: Optional NCBI API key (raises Entrez rate limits).
+            tool: Short application name reported to NCBI (recommended).
+            enabled: When False, search() returns no results without calling Entrez.
         """
-        Entrez.email = email
+        has_email = bool((email or "").strip())
+        self.enabled = bool(enabled) and has_email
         self.rate_limit_delay = 0.34  # ~3 requests per second
+
+        if self.enabled:
+            Entrez.email = (email or "").strip()
+            if api_key:
+                Entrez.api_key = api_key
+            if tool:
+                Entrez.tool = tool
+            logger.info("PubMedSearcher initialized (Entrez email set, tool={})", tool)
+        else:
+            logger.info("PubMedSearcher disabled — skipping Entrez / PubMed calls.")
 
     def search(self, query: str, max_results: int = 3) -> List[Dict[str, Any]]:
         """
@@ -30,6 +51,10 @@ class PubMedSearcher:
         Returns:
             List of paper dictionaries with title, abstract, etc.
         """
+        if not self.enabled:
+            logger.info("PubMed skipped (disabled or no email): %s", query)
+            return []
+
         try:
             logger.info("PubMed search: %s (max_results=%d)", query, max_results)
             # Step 1: Search for article IDs

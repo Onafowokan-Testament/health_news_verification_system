@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MedVer{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+</head>
+<body>
+<div class="page-shell">
+    <header class="site-header">
+        <div class="nav-wrap">
+            <a href="/" class="brand">MedVer</a>
+            <nav class="nav-links" aria-label="Main">
+                <a href="/">Overview</a>
+                <a href="/chat" class="nav-pill">Chat</a>
+                <a href="/history">History</a>
+                <a href="/about">About</a>
+                {% if is_admin %}
+                <a href="/admin">Admin</a>
+                {% else %}
+                <a href="/admin/login">Admin</a>
+                {% endif %}
+            </nav>
+            <div class="header-actions">
+                <form action="/set-user" method="post" class="user-form">
+                    <input type="text" name="user_label" value="{{ user_label }}" placeholder="Your name" aria-label="User name">
+                    <button type="submit">Save</button>
+                </form>
+                {% if is_admin %}
+                <form action="/admin/logout" method="post" class="user-form">
+                    <button type="submit">Logout admin</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        MedVer is for information only — not a substitute for professional medical advice.
+        <a href="/about">Safety &amp; how it works</a>
+    </footer>
+</div>
+</body>
+</html>
