@@ -11,6 +11,7 @@ pydub
 audioop-lts
 loguru
 fastapi
+itsdangerous
 uvicorn
 jinja2
 python-multipart
