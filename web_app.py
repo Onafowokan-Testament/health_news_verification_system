@@ -273,7 +273,7 @@ def _tts_b64(
 
 @app.get("/", response_class=HTMLResponse)
 async def landing(request: Request):
-    return templates.TemplateResponse("landing.html", _template_ctx(request))
+    return templates.TemplateResponse(request, "landing.html", _template_ctx(request))
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -283,6 +283,7 @@ async def login_page(request: Request, next: str = "/chat"):
         return RedirectResponse(url=dest, status_code=303)
     safe_next = next if next.startswith("/") else "/chat"
     return templates.TemplateResponse(
+        request,
         "login.html",
         _template_ctx(request, error="", next_url=safe_next),
     )
@@ -300,14 +301,14 @@ async def login_submit(
 
     em = email.strip().lower()
     if not em or "@" not in em:
-        return templates.TemplateResponse("login.html", err_ctx("Enter a valid email address."))
+        return templates.TemplateResponse(request, "login.html", err_ctx("Enter a valid email address."))
     if not password:
-        return templates.TemplateResponse("login.html", err_ctx("Password is required."))
+        return templates.TemplateResponse(request, "login.html", err_ctx("Password is required."))
 
     with Session(engine) as session:
         user = session.exec(select(User).where(User.email == em)).first()
     if not user or not _verify_password(password, user.password_hash):
-        return templates.TemplateResponse("login.html", err_ctx("Invalid email or password."))
+        return templates.TemplateResponse(request, "login.html", err_ctx("Invalid email or password."))
 
     _set_user_session(request, user)
     return RedirectResponse(url=safe_next, status_code=303)
@@ -317,7 +318,7 @@ async def login_submit(
 async def register_page(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse(url="/chat", status_code=303)
-    return templates.TemplateResponse("register.html", _template_ctx(request, error=""))
+    return templates.TemplateResponse(request, "register.html", _template_ctx(request, error=""))
 
 
 @app.post("/register", response_class=HTMLResponse)
@@ -330,11 +331,13 @@ async def register_submit(
     em = email.strip().lower()
     if not em or "@" not in em:
         return templates.TemplateResponse(
+            request,
             "register.html",
             _template_ctx(request, error="Enter a valid email address."),
         )
     if len(password) < 8:
         return templates.TemplateResponse(
+            request,
             "register.html",
             _template_ctx(request, error="Password must be at least 8 characters."),
         )
@@ -345,6 +348,7 @@ async def register_submit(
         existing = session.exec(select(User).where(User.email == em)).first()
         if existing:
             return templates.TemplateResponse(
+                request,
                 "register.html",
                 _template_ctx(request, error="An account with this email already exists."),
             )
@@ -372,7 +376,7 @@ async def chat_page(request: Request):
     redir = _require_login_redirect(request, "/chat")
     if redir:
         return redir
-    return templates.TemplateResponse("chat.html", _template_ctx(request))
+    return templates.TemplateResponse(request, "chat.html", _template_ctx(request))
 
 
 @app.post("/api/chat")
@@ -495,6 +499,7 @@ async def history_page(request: Request):
         )
         records = list(session.exec(statement).all())
     return templates.TemplateResponse(
+        request,
         "history.html",
         _template_ctx(request, records=records),
     )
@@ -502,12 +507,13 @@ async def history_page(request: Request):
 
 @app.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request):
-    return templates.TemplateResponse("about.html", _template_ctx(request))
+    return templates.TemplateResponse(request, "about.html", _template_ctx(request))
 
 
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "admin_login.html",
         _template_ctx(request, error="", admin_enabled=_admin_enabled()),
     )
@@ -517,6 +523,7 @@ async def admin_login_page(request: Request):
 async def admin_login(request: Request, password: str = Form(default="")):
     if not _admin_enabled():
         return templates.TemplateResponse(
+            request,
             "admin_login.html",
             _template_ctx(
                 request,
@@ -526,6 +533,7 @@ async def admin_login(request: Request, password: str = Form(default="")):
         )
     if password != _admin_password():
         return templates.TemplateResponse(
+            request,
             "admin_login.html",
             _template_ctx(request, error="Invalid admin password.", admin_enabled=True),
         )
@@ -547,6 +555,7 @@ async def admin_page(request: Request):
     with Session(engine) as session:
         truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
     return templates.TemplateResponse(
+        request,
         "admin.html",
         _template_ctx(request, truths=truths, message="", error=""),
     )
@@ -572,6 +581,7 @@ async def admin_add_truth(
         with Session(engine) as session:
             truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
         return templates.TemplateResponse(
+            request,
             "admin.html",
             _template_ctx(
                 request,
@@ -600,6 +610,7 @@ async def admin_add_truth(
     with Session(engine) as session:
         truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
     return templates.TemplateResponse(
+        request,
         "admin.html",
         _template_ctx(
             request,
