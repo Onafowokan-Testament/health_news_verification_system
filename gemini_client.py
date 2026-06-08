@@ -97,7 +97,7 @@ def _friendly_model_error(exc: Exception) -> str:
 
 
 class GeminiClient:
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-lite"):
         self.api_key = api_key
         self.model = model
         self.client = None
@@ -128,6 +128,25 @@ class GeminiClient:
             logger.exception("Could not list Gemini models: %s", e)
             return []
 
+    def _build_model_candidates(self) -> list[str]:
+        """Return preferred model names in order."""
+        preferred = [
+            self.model,
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+        ]
+        available = self._list_models()
+        if available:
+            preferred = [name for name in preferred if name in available] + [
+                name for name in available if name not in preferred
+            ]
+
+        candidates: list[str] = []
+        for name in preferred:
+            if name and name not in candidates:
+                candidates.append(name)
+        return candidates
+
     def chat(self, system_prompt: str, user_message: str) -> str:
         """Send a chat-style request to Gemini and return the assistant text.
 
@@ -140,48 +159,53 @@ class GeminiClient:
             )
 
         prompt = system_prompt + "\n\n" + user_message
-        logger.info(
-            "Calling Gemini models.generate_content with model=%s prompt_len=%d",
-            self.model,
-            len(prompt),
-        )
+        candidates = self._build_model_candidates()
+        last_error: Exception | None = None
 
-        try:
-            response = self.client.models.generate_content(
-                model=self.model, contents=prompt
+        for model_name in candidates:
+            logger.info(
+                "Calling Gemini models.generate_content with model=%s prompt_len=%d",
+                model_name,
+                len(prompt),
             )
-        except Exception as e:
-            # Try to surface a helpful error message when the model is not found or unsupported
-            err_text = str(e)
-            logger.exception("Gemini generate_content error: %s", err_text)
-            if "404" in err_text or "not found" in err_text.lower():
-                available = self._list_models()
-                sample = (
-                    ", ".join(available[:5])
-                    if available
-                    else "(could not fetch models)"
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name, contents=prompt
                 )
-                logger.warning(
-                    "Gemini model %s not found; available models sample: %s",
-                    self.model,
-                    sample,
-                )
-                return (
-                    "The selected AI model is not available right now. Please try "
-                    "again later or update the model setting."
-                )
-            logger.warning("Gemini request failed: %s", err_text)
-            return _friendly_model_error(e)
+                text = _extract_response_text(response)
+                if not text:
+                    logger.warning(
+                        "Gemini returned an empty response payload for model=%s: %r",
+                        model_name,
+                        response,
+                    )
+                    continue
 
-        text = _extract_response_text(response)
-        if not text:
-            logger.warning("Gemini returned an empty response payload: %r", response)
-            return (
-                "I couldn't generate a response from Gemini right now. "
-                "Please try again."
-            )
+                self.model = model_name
+                logger.info(
+                    "Gemini response length: %d",
+                    len(text) if isinstance(text, str) else 0,
+                )
+                return text
+            except Exception as e:
+                last_error = e
+                err_text = str(e)
+                logger.exception(
+                    "Gemini generate_content error for model=%s: %s",
+                    model_name,
+                    err_text,
+                )
+                if "404" in err_text or "not found" in err_text.lower():
+                    logger.warning("Skipping unavailable model: %s", model_name)
+                    continue
+                if "503" in err_text or "429" in err_text or "unavailable" in err_text.lower():
+                    logger.warning(
+                        "Gemini model %s is overloaded; trying next fallback model",
+                        model_name,
+                    )
+                    continue
+                return _friendly_model_error(e)
 
-        logger.info(
-            "Gemini response length: %d", len(text) if isinstance(text, str) else 0
-        )
-        return text
+        if last_error is not None:
+            return _friendly_model_error(last_error)
+        return "I couldn't generate a response from Gemini right now. Please try again."

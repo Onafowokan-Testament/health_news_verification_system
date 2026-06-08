@@ -106,6 +106,31 @@ class VoiceHandler:
             "ogg",
         ]
 
+    def _build_model_candidates(self) -> list[str]:
+        """Return preferred Gemini models for transcription in order."""
+        preferred = [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+        ]
+        try:
+            listed = self.client.models.list() if self.client else []
+            if listed and isinstance(listed, list):
+                available = [
+                    m.get("name") if isinstance(m, dict) else getattr(m, "name", None)
+                    for m in listed
+                ]
+                preferred = [m for m in preferred if m in available] + [
+                    m for m in available if m not in preferred
+                ]
+        except Exception:
+            pass
+
+        candidates: list[str] = []
+        for name in preferred:
+            if name and name not in candidates:
+                candidates.append(name)
+        return candidates
+
     def transcribe_audio(
         self, audio_file, language: str = "English", prompt: Optional[str] = None
     ) -> Tuple[str, dict]:
@@ -189,46 +214,29 @@ class VoiceHandler:
                         types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                     ]
 
-                    try:
-                        # Prefer model specified in config if available, else use gemini-2.5-flash
-                        model_name = getattr(self, "model", None) or "gemini-2.5-flash"
-                        # If client supports listing models, try to use first available supported model
-                        try:
-                            listed = self.client.models.list()
-                            if listed and isinstance(listed, list) and len(listed) > 0:
-                                # prefer a flash model if present
-                                available = [
-                                    (
-                                        m.get("name")
-                                        if isinstance(m, dict)
-                                        else getattr(m, "name", None)
-                                    )
-                                    for m in listed
-                                ]
-                                if any("flash" in (a or "") for a in available):
-                                    for a in available:
-                                        if a and "flash" in a:
-                                            model_name = a
-                                            break
-                                else:
-                                    model_name = available[0]
-                        except Exception:
-                            pass
-
-                        response = self.client.models.generate_content(
-                            model=model_name, contents=contents
-                        )
-                    except Exception:
-                        # Try a safe default model and surface helpful guidance
+                    last_error: Exception | None = None
+                    response = None
+                    for model_name in self._build_model_candidates():
                         try:
                             response = self.client.models.generate_content(
-                                model="gemini-2.5-flash", contents=contents
+                                model=model_name, contents=contents
                             )
+                            break
                         except Exception as inner_e:
-                            raise RuntimeError(
-                                "Generative AI audio transcription failed. See Gemini audio docs. Original error: %s"
-                                % inner_e
-                            )
+                            last_error = inner_e
+                            err_text = str(inner_e).lower()
+                            if "503" in err_text or "429" in err_text or "unavailable" in err_text or "not found" in err_text:
+                                logger.warning(
+                                    "Transcription model %s failed, trying next fallback",
+                                    model_name,
+                                )
+                                continue
+                            raise
+
+                    if response is None:
+                        raise RuntimeError(
+                            "Generative AI audio transcription failed. Please try again later."
+                        ) from last_error
 
                     text = _extract_response_text(response)
 

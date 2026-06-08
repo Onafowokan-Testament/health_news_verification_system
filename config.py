@@ -85,9 +85,9 @@ class Config:
         if "embedding" in cm_norm or cm_norm.startswith("text-embedding"):
             print(
                 f"⚠️  GEMINI_MODEL '{chat_model}' is not valid for chat (generate_content) — "
-                f"using 'gemini-2.5-flash'. Set GEMINI_MODEL to a chat model in .env."
+                f"using 'gemini-2.5-flash-lite'. Set GEMINI_MODEL to a chat model in .env."
             )
-            self.GEMINI_MODEL = "gemini-2.5-flash"
+            self.GEMINI_MODEL = "gemini-2.5-flash-lite"
 
     def validate(self) -> bool:
         """Validate required configuration."""
