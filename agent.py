@@ -232,6 +232,9 @@ PUBMED_RESULTS:
             )
         except Exception as e:
             logger.exception("Error calling Gemini: %s", e)
-            response_text = f"Error calling Gemini: {e}"
+            response_text = (
+                "The AI service is temporarily unavailable. Please try again in a "
+                "minute."
+            )
 
         return {"claim": claim, "response": response_text, "messages": []}

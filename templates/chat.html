@@ -37,17 +37,7 @@
             <span></span>
         </div>
 
-        <div class="chat-settings-bar" role="toolbar" aria-label="Language and speech">
-            <div class="chat-settings-cluster chat-settings-cluster--lang">
-                <label class="chat-lang-field" for="chat-language">
-                    <span class="chat-settings-heading">Language</span>
-                    <select id="chat-language" class="chat-lang-select" form="chat-composer-form">
-                        {% for lang in ["English", "Pidgin", "Yoruba", "Hausa", "Igbo"] %}
-                        <option value="{{ lang }}" {% if lang == "English" %}selected{% endif %}>{{ lang }}</option>
-                        {% endfor %}
-                    </select>
-                </label>
-            </div>
+        <div class="chat-settings-bar" role="toolbar" aria-label="Speech output">
             <div class="chat-settings-cluster chat-settings-cluster--speech" aria-label="Speech output">
                 <span class="chat-settings-heading chat-settings-heading--inline">Speech</span>
                 <label class="chat-chip-toggle">
@@ -60,6 +50,8 @@
                 </label>
             </div>
         </div>
+
+        <div class="chat-status" id="chat-status" aria-live="polite">Ready</div>
 
         <div class="chat-messages" id="chat-messages">
             <div class="chat-messages-inner" id="chat-messages-inner">

@@ -14,15 +14,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import quote
-
 import bcrypt
-
-from pydantic import BaseModel, Field, field_validator
-
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session, desc, select
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -45,10 +42,34 @@ class AppServices:
 
 
 def _extract_verdict(response_text: str) -> str:
-    match = re.search(r"\*\*Verdict:\*\*\s*(TRUE|FALSE|PARTIALLY TRUE|UNCLEAR)", response_text, re.IGNORECASE)
+    match = re.search(
+        r"\*\*Verdict:\*\*\s*(TRUE|FALSE|PARTIALLY TRUE|UNCLEAR)",
+        response_text,
+        re.IGNORECASE,
+    )
     if not match:
         return "UNCLEAR"
     return match.group(1).upper()
+
+
+def _friendly_service_error(raw_error: str | None) -> str:
+    """Turn low-level backend errors into a short user-facing message."""
+    text = (raw_error or "").strip().lower()
+    if not text:
+        return "The service could not process that request. Please try again."
+    if "503" in text or "unavailable" in text or "high demand" in text:
+        return "The AI service is busy right now. Please try again in a minute."
+    if "429" in text or "rate limit" in text:
+        return (
+            "The AI service is receiving too many requests right now. Please wait a moment and try again."
+        )
+    if "permission" in text or "api key" in text or "401" in text or "403" in text:
+        return (
+            "The service is not configured correctly on the server. Please contact the app owner."
+        )
+    if "microphone" in text or "audio" in text:
+        return "I could not understand the audio. Please record again and speak clearly."
+    return "The service could not process that request. Please try again."
 
 
 def _audio_b64_from_file(path: str) -> str:
@@ -69,7 +90,9 @@ def _sources_text_to_list(sources_text: str) -> list[str]:
 
 def _managed_truths_as_myths() -> list[dict]:
     with Session(engine) as session:
-        truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
+        truths = list(
+            session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all()
+        )
 
     myths = []
     for t in truths:
@@ -113,6 +136,7 @@ async def lifespan(fastapi_app: FastAPI):
     kb = HealthKnowledgeBase(config)
     voice = VoiceHandler(config.GEMINI_API_KEY)
 
+    # Index myths into vector database
     myths = _all_myths_for_index()
     if kb.get_count() == 0:
         kb.index_myths(myths)
@@ -133,13 +157,19 @@ async def lifespan(fastapi_app: FastAPI):
 
 
 app = FastAPI(title="MedVer", lifespan=lifespan)
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "change-me-for-production"))
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET", "change-me-for-production"),
+)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
 def _hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode(
+        "utf-8"
+    )
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
@@ -172,7 +202,9 @@ def _template_ctx(request: Request, **extra) -> dict:
     return ctx
 
 
-def _require_login_redirect(request: Request, next_path: str) -> RedirectResponse | None:
+def _require_login_redirect(
+    request: Request, next_path: str
+) -> RedirectResponse | None:
     if request.session.get("user_id"):
         return None
     safe = next_path if next_path.startswith("/") else "/chat"
@@ -182,7 +214,9 @@ def _require_login_redirect(request: Request, next_path: str) -> RedirectRespons
 def _require_user_api(request: Request) -> JSONResponse | None:
     if request.session.get("user_id"):
         return None
-    return JSONResponse({"error": "Sign in required.", "detail": "Sign in required."}, status_code=401)
+    return JSONResponse(
+        {"error": "Sign in required.", "detail": "Sign in required."}, status_code=401
+    )
 
 
 def _set_user_session(request: Request, user: User) -> None:
@@ -257,18 +291,28 @@ def _tts_b64(
     slow: bool,
     want: bool,
 ) -> str:
+    """Generate text-to-speech audio as base64. Returns empty string on any error."""
     if not want:
         return ""
-    audio_path = services.voice_handler.synthesize_speech(text, language=language, slow=slow)
-    if not audio_path:
-        return ""
     try:
-        return _audio_b64_from_file(audio_path)
-    finally:
+        audio_path = services.voice_handler.synthesize_speech(
+            text, language=language, slow=slow
+        )
+        if not audio_path:
+            logger.warning("Audio synthesis returned no path (API may be down)")
+            return ""
         try:
-            os.unlink(audio_path)
-        except OSError:
-            pass
+            b64_result = _audio_b64_from_file(audio_path)
+            logger.info("Audio generation successful, %d bytes", len(b64_result) if b64_result else 0)
+            return b64_result
+        finally:
+            try:
+                os.unlink(audio_path)
+            except OSError:
+                pass
+    except Exception as e:
+        logger.warning("Audio generation failed (will continue without audio): %s", str(e))
+        return ""  # Gracefully degrade - return response without audio
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -301,14 +345,20 @@ async def login_submit(
 
     em = email.strip().lower()
     if not em or "@" not in em:
-        return templates.TemplateResponse(request, "login.html", err_ctx("Enter a valid email address."))
+        return templates.TemplateResponse(
+            request, "login.html", err_ctx("Enter a valid email address.")
+        )
     if not password:
-        return templates.TemplateResponse(request, "login.html", err_ctx("Password is required."))
+        return templates.TemplateResponse(
+            request, "login.html", err_ctx("Password is required.")
+        )
 
     with Session(engine) as session:
         user = session.exec(select(User).where(User.email == em)).first()
     if not user or not _verify_password(password, user.password_hash):
-        return templates.TemplateResponse(request, "login.html", err_ctx("Invalid email or password."))
+        return templates.TemplateResponse(
+            request, "login.html", err_ctx("Invalid email or password.")
+        )
 
     _set_user_session(request, user)
     return RedirectResponse(url=safe_next, status_code=303)
@@ -318,7 +368,9 @@ async def login_submit(
 async def register_page(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse(url="/chat", status_code=303)
-    return templates.TemplateResponse(request, "register.html", _template_ctx(request, error=""))
+    return templates.TemplateResponse(
+        request, "register.html", _template_ctx(request, error="")
+    )
 
 
 @app.post("/register", response_class=HTMLResponse)
@@ -350,7 +402,9 @@ async def register_submit(
             return templates.TemplateResponse(
                 request,
                 "register.html",
-                _template_ctx(request, error="An account with this email already exists."),
+                _template_ctx(
+                    request, error="An account with this email already exists."
+                ),
             )
         user = User(
             email=em,
@@ -440,15 +494,20 @@ async def api_chat_voice(
             return JSONResponse({"error": "Empty or too-short audio"}, status_code=400)
         fname = audio.filename or "voice.webm"
         named_buffer = NamedBytesIO(raw_audio, fname)
-        transcription, metadata = services.voice_handler.transcribe_audio(named_buffer, language=language)
+        transcription, metadata = services.voice_handler.transcribe_audio(
+            named_buffer, language=language
+        )
         if not metadata.get("success"):
             return JSONResponse(
-                {"error": metadata.get("error", "Transcription failed")},
+                {"error": _friendly_service_error(metadata.get("error", "Transcription failed"))},
                 status_code=400,
             )
     except (RuntimeError, ValueError, OSError) as exc:
         logger.exception("Voice transcription failed")
-        return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(
+            {"error": _friendly_service_error(str(exc))},
+            status_code=400,
+        )
 
     claim = transcription.strip()
     if not claim:
@@ -481,7 +540,13 @@ async def api_chat_voice(
         )
     except Exception as e:
         logger.exception("api_chat_voice check failed")
-        return JSONResponse({"error": str(e), "transcription": claim}, status_code=500)
+        return JSONResponse(
+            {
+                "error": "The AI service is temporarily unavailable. Please try again in a minute.",
+                "transcription": claim,
+            },
+            status_code=500,
+        )
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -553,7 +618,9 @@ async def admin_page(request: Request):
         return RedirectResponse(url="/admin/login", status_code=303)
 
     with Session(engine) as session:
-        truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
+        truths = list(
+            session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all()
+        )
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -579,7 +646,11 @@ async def admin_add_truth(
     explanation = explanation.strip()
     if not claim or not explanation:
         with Session(engine) as session:
-            truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
+            truths = list(
+                session.exec(
+                    select(AdminTruth).order_by(desc(AdminTruth.created_at))
+                ).all()
+            )
         return templates.TemplateResponse(
             request,
             "admin.html",
@@ -608,7 +679,9 @@ async def admin_add_truth(
     _rebuild_kb(services)
 
     with Session(engine) as session:
-        truths = list(session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all())
+        truths = list(
+            session.exec(select(AdminTruth).order_by(desc(AdminTruth.created_at))).all()
+        )
     return templates.TemplateResponse(
         request,
         "admin.html",

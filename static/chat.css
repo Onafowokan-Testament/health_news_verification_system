@@ -475,6 +475,25 @@
   box-shadow: 0 4px 12px rgba(12, 56, 53, 0.04);
 }
 
+.chat-status {
+  max-width: 48rem;
+  margin: 0 auto 0.25rem;
+  padding: 0 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--chat-muted);
+  text-align: center;
+  min-height: 1.2rem;
+}
+
+.chat-status.is-busy {
+  color: var(--chat-accent-hover);
+}
+
+.chat-status.is-error {
+  color: var(--chat-danger);
+}
+
 .chat-settings-cluster {
   display: flex;
   flex-wrap: wrap;

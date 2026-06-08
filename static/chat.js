@@ -7,14 +7,26 @@
   const btnNewChat = document.getElementById("btn-new-chat");
   const sidebar = document.getElementById("chat-sidebar");
   const btnMenu = document.getElementById("btn-menu-toggle");
+  const statusEl = document.getElementById("chat-status");
 
-  const langSelect = document.getElementById("chat-language");
   const optSlow = document.getElementById("opt-slow");
   const optAudioOut = document.getElementById("opt-audio-out");
+  const LANGUAGE = "English"; // English only
 
   let mediaRecorder = null;
   let recordedChunks = [];
   let recording = false;
+
+  function setStatus(message, state) {
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.classList.remove("is-busy", "is-error");
+    if (state === "busy") {
+      statusEl.classList.add("is-busy");
+    } else if (state === "error") {
+      statusEl.classList.add("is-error");
+    }
+  }
 
   function scrollToBottom() {
     const wrap = document.getElementById("chat-messages");
@@ -25,6 +37,17 @@
     const d = document.createElement("div");
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  function linkifyUrls(text) {
+    // Convert URLs in text to clickable links
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const escaped = escapeHtml(text);
+    return escaped.replace(urlRegex, function(url) {
+      // Remove trailing punctuation that shouldn't be part of URL
+      const trimmed = url.replace(/[.,;:!?)\]]*$/, '');
+      return '<a href="' + escapeHtml(trimmed) + '" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline;">' + escapeHtml(trimmed) + '</a>';
+    });
   }
 
   function verdictClass(v) {
@@ -62,7 +85,7 @@
       '<div class="chat-avatar">M</div><div class="chat-bubble">' +
       tag +
       '<div class="msg-body">' +
-      escapeHtml(content) +
+      linkifyUrls(content) +
       "</div></div>";
     messagesEl.appendChild(row);
     scrollToBottom();
@@ -97,21 +120,29 @@
   }
 
   function attachAudio(bubbleEl, base64) {
-    if (!base64 || !bubbleEl) return;
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    audio.className = "chat-audio-inline";
-    audio.src = "data:audio/mpeg;base64," + base64;
-    bubbleEl.appendChild(audio);
+    if (!base64 || !bubbleEl) {
+      return; // No audio available - that's OK
+    }
+    try {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.className = "chat-audio-inline";
+      audio.src = "data:audio/mpeg;base64," + base64;
+      bubbleEl.appendChild(audio);
+    } catch (e) {
+      // Audio attachment failed silently - response text is still available
+      console.warn("Audio attachment failed:", e);
+    }
   }
 
   async function sendText(text) {
     const body = {
       message: text,
-      language: langSelect.value,
+      language: LANGUAGE,
       slow_speech: optSlow.checked,
       audio_response: optAudioOut.checked,
     };
+    setStatus("Sending message...", "busy");
     appendLoading();
     btnSend.disabled = true;
     try {
@@ -144,13 +175,18 @@
             .join(" ");
         }
         appendError(String(detail));
+        setStatus("Message failed to process.", "error");
         return;
       }
       const bubble = appendAssistant(data.response, data.verdict);
-      if (data.audio_base64) attachAudio(bubble, data.audio_base64);
+      if (data.audio_base64) {
+        attachAudio(bubble, data.audio_base64);
+      }
+      setStatus("Reply received.", "");
     } catch (e) {
       removeLoading();
       appendError(String(e.message || e));
+      setStatus("Could not reach the server.", "error");
     } finally {
       btnSend.disabled = false;
       scrollToBottom();
@@ -158,11 +194,12 @@
   }
 
   async function sendVoice(blob) {
+    setStatus("Sending voice note...", "busy");
     appendLoading();
     btnMic.disabled = true;
     const fd = new FormData();
     fd.append("audio", blob, "voice.webm");
-    fd.append("language", langSelect.value);
+    fd.append("language", LANGUAGE);
     fd.append("slow_speech", optSlow.checked ? "true" : "false");
     fd.append("audio_response", optAudioOut.checked ? "true" : "false");
     try {
@@ -194,14 +231,19 @@
             .join(" ");
         }
         appendError(String(detail));
+        setStatus("Voice message failed to process.", "error");
         return;
       }
       if (data.transcription) appendUser(data.transcription);
       const bubble = appendAssistant(data.response, data.verdict);
-      if (data.audio_base64) attachAudio(bubble, data.audio_base64);
+      if (data.audio_base64) {
+        attachAudio(bubble, data.audio_base64);
+      }
+      setStatus("Reply received.", "");
     } catch (e) {
       removeLoading();
       appendError(String(e.message || e));
+      setStatus("Could not reach the server.", "error");
     } finally {
       btnMic.disabled = false;
       scrollToBottom();
@@ -274,6 +316,7 @@
     textarea.value = "";
     textarea.style.height = "auto";
     sidebar.classList.remove("open");
+    setStatus("Ready", "");
   });
 
   if (btnMenu && sidebar) {
@@ -293,4 +336,6 @@
       sidebar.classList.remove("open");
     }
   });
+
+  setStatus("Ready", "");
 })();

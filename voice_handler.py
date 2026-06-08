@@ -15,6 +15,56 @@ except Exception:
     genai = None
 
 
+def _extract_response_text(response) -> str:
+    """Best-effort extraction for Gemini SDK response shapes."""
+    if response is None:
+        return ""
+
+    text = getattr(response, "text", None)
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+
+    candidates = getattr(response, "candidates", None)
+    if candidates:
+        for candidate in candidates:
+            content = getattr(candidate, "content", None)
+            if content is None and isinstance(candidate, dict):
+                content = candidate.get("content")
+
+            parts = getattr(content, "parts", None)
+            if parts is None and isinstance(content, dict):
+                parts = content.get("parts")
+
+            if not parts:
+                continue
+
+            collected: list[str] = []
+            for part in parts:
+                part_text = getattr(part, "text", None)
+                if part_text is None and isinstance(part, dict):
+                    part_text = part.get("text")
+                if part_text:
+                    collected.append(str(part_text))
+
+            joined = "".join(collected).strip()
+            if joined:
+                return joined
+
+    outputs = getattr(response, "output", None)
+    if outputs and len(outputs) > 0:
+        try:
+            content = outputs[0].get("content", [])
+            if content and len(content) > 0:
+                first = content[0]
+                if isinstance(first, dict):
+                    return str(first.get("text", "")).strip()
+                return str(first).strip()
+        except Exception:
+            pass
+
+    return str(response).strip()
+
+
 class VoiceHandler:
     """
     Handles voice input (speech-to-text) and output (text-to-speech).
@@ -39,13 +89,9 @@ class VoiceHandler:
                 os.environ["GEMINI_API_KEY"] = api_key
                 self.client = genai.Client()
 
-        # Language mapping for transcription and gTTS (output)
+        # Language mapping for transcription and gTTS (output) - English only
         self.language_codes = {
             "English": {"transcribe": "en", "gtts": "en"},
-            "Pidgin": {"transcribe": "en", "gtts": "en"},  # Treat as English
-            "Yoruba": {"transcribe": "yo", "gtts": "yo"},
-            "Hausa": {"transcribe": "ha", "gtts": "ha"},
-            "Igbo": {"transcribe": "ig", "gtts": "ig"},
         }
 
         # Supported audio formats
@@ -184,31 +230,18 @@ class VoiceHandler:
                                 % inner_e
                             )
 
-                    # Extract transcript text
-                    text = ""
-                    if hasattr(response, "text") and response.text:
-                        text = response.text.strip()
-                    else:
-                        # Fallback: inspect output structure
-                        try:
-                            outputs = getattr(response, "output", None)
-                            if outputs and len(outputs) > 0:
-                                content = outputs[0].get("content", [])
-                                if content and len(content) > 0:
-                                    # content elements may be dicts with 'text'
-                                    first = content[0]
-                                    if isinstance(first, dict):
-                                        text = first.get("text", "").strip()
-                                    else:
-                                        text = str(first).strip()
-                        except Exception:
-                            text = str(response)
+                    text = _extract_response_text(response)
 
                     metadata = {
                         "language": lang_code,
                         "duration": None,
                         "success": True,
                     }
+                    if not text:
+                        logger.warning(
+                            "Transcription returned an empty response payload: %r",
+                            response,
+                        )
                     logger.info(
                         "Transcription succeeded (chars=%d)",
                         len(text) if isinstance(text, str) else 0,
@@ -237,26 +270,30 @@ class VoiceHandler:
 
         Args:
             text: Text to convert to speech
-            language: Language for speech synthesis
+            language: Language for speech synthesis (English only)
             slow: Whether to speak slowly (good for older adults)
 
         Returns:
             Path to temporary audio file, or None on error
         """
         try:
-            # Get language code for gTTS
+            # Get language code for gTTS (English only)
             lang_code = self.language_codes.get(language, {}).get("gtts", "en")
 
+            logger.info("Generating speech: text_len=%d, slow=%s", len(text), slow)
+            
             # Create TTS
             tts = gTTS(text=text, lang=lang_code, slow=slow)
 
             # Save to temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
                 tts.save(fp.name)
+                logger.info("Speech synthesis successful: %s", fp.name)
                 return fp.name
 
         except Exception as e:
-            print(f"Text-to-speech error: {e}")
+            logger.error("Text-to-speech error: %s", str(e))
+            # Return None gracefully - audio is optional
             return None
 
     def convert_audio_format(

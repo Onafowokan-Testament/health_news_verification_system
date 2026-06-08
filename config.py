@@ -59,11 +59,11 @@ class Config:
     # UI Configuration
     APP_TITLE: str = "🏥 MedVer"
     APP_ICON: str = "🏥"
-    SUPPORTED_LANGUAGES: list = None
+    SUPPORTED_LANGUAGES: list = field(default_factory=lambda: ["English"])
 
     def __post_init__(self):
-        if self.SUPPORTED_LANGUAGES is None:
-            self.SUPPORTED_LANGUAGES = ["English", "Pidgin", "Yoruba", "Hausa", "Igbo"]
+        # Only English supported
+        self.SUPPORTED_LANGUAGES = ["English"]
 
         # Enable LangSmith tracing if API key provided
         if self.LANGSMITH_API_KEY:
