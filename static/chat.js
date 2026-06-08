@@ -39,15 +39,57 @@
     return d.innerHTML;
   }
 
+  function normalizeMarkdownLinks(text) {
+    // Repair the most common broken Markdown link shape: [label](url without closing parenthesis)
+    return text.replace(
+      /\[([^\]]+)\]\(((?:https?:\/\/|www\.)[^\s)]+)(?:\s|$)/g,
+      function (_, label, url) {
+        const trimmed = url.replace(/[.,;:!?)\]]*$/, "");
+        return "[" + label + "](" + trimmed + ")";
+      }
+    );
+  }
+
   function linkifyUrls(text) {
-    // Convert URLs in text to clickable links
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const escaped = escapeHtml(text);
-    return escaped.replace(urlRegex, function(url) {
-      // Remove trailing punctuation that shouldn't be part of URL
-      const trimmed = url.replace(/[.,;:!?)\]]*$/, '');
-      return '<a href="' + escapeHtml(trimmed) + '" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline;">' + escapeHtml(trimmed) + '</a>';
+    const escaped = escapeHtml(normalizeMarkdownLinks(String(text || "")));
+
+    // Convert Markdown links first, then plain URLs.
+    const markdownLinkRegex = /\[([^\]]+)\]\(((?:https?:\/\/|www\.)[^\s)]+)\)/g;
+    let linked = escaped.replace(markdownLinkRegex, function (_, label, url) {
+      const cleanedUrl = url.replace(/[.,;:!?)\]]*$/, "");
+      const finalUrl = cleanedUrl.startsWith("http")
+        ? cleanedUrl
+        : "https://" + cleanedUrl;
+      return (
+        '<a href="' +
+        escapeHtml(finalUrl) +
+        '" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline;">' +
+        label +
+        "</a>"
+      );
     });
+
+    const rawUrlRegex = /(https?:\/\/[^\s<]+)/g;
+    linked = linked
+      .split(/(<a\b[^>]*>.*?<\/a>)/g)
+      .map(function (chunk) {
+        if (chunk.startsWith("<a ")) {
+          return chunk;
+        }
+        return chunk.replace(rawUrlRegex, function (url) {
+          const trimmed = url.replace(/[.,;:!?)\]]*$/, "");
+          return (
+            '<a href="' +
+            escapeHtml(trimmed) +
+            '" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline;">' +
+            escapeHtml(trimmed) +
+            "</a>"
+          );
+        });
+      })
+      .join("");
+
+    return linked;
   }
 
   function verdictClass(v) {
